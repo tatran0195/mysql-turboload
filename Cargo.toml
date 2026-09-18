@@ -1,11 +1,11 @@
 [package]
-name = "mysql-turboload"
+name = "zephyr"
 version = "1.0.0"
 edition = "2021"
-description = "MySQL TurboLoad Enterprise: High-performance concurrent bulk data ingestion engine"
+description = "Zephyr: High-performance concurrent MySQL bulk data engine"
 
 [[bin]]
-name = "mysql-turboload"
+name = "zephyr"
 path = "src/main.rs"
 
 [dependencies]
