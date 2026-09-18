@@ -86,12 +86,7 @@ pub fn truncate_path_str(path: &str, max_chars: usize) -> String {
 }
 
 /// Renders a framed startup card with cyan borders, dynamically sizing to content.
-pub fn render_card(
-    title: &str,
-    version: &str,
-    subtitle: &str,
-    items: &[(&str, String)],
-) -> String {
+pub fn render_card(title: &str, version: &str, subtitle: &str, items: &[(&str, String)]) -> String {
     let mut out = String::new();
 
     // Determine required card inner width (min 61)
@@ -166,11 +161,17 @@ pub fn render_summary_card(
     let (top_right, mid_right, bot_right) = ("╮", "┤", "╯");
 
     let top_border = if is_cancelled {
-        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right).yellow().to_string()
+        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right)
+            .yellow()
+            .to_string()
     } else if is_success {
-        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right).green().to_string()
+        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right)
+            .green()
+            .to_string()
     } else {
-        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right).red().to_string()
+        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right)
+            .red()
+            .to_string()
     };
     out.push_str(&top_border);
     out.push('\n');
@@ -189,11 +190,17 @@ pub fn render_summary_card(
 
     // Mid Divider
     let mid_divider = if is_cancelled {
-        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right).yellow().to_string()
+        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right)
+            .yellow()
+            .to_string()
     } else if is_success {
-        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right).green().to_string()
+        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right)
+            .green()
+            .to_string()
     } else {
-        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right).red().to_string()
+        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right)
+            .red()
+            .to_string()
     };
     out.push_str(&mid_divider);
     out.push('\n');
@@ -209,11 +216,17 @@ pub fn render_summary_card(
 
     // Bottom border
     let bottom_border = if is_cancelled {
-        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right).yellow().to_string()
+        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right)
+            .yellow()
+            .to_string()
     } else if is_success {
-        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right).green().to_string()
+        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right)
+            .green()
+            .to_string()
     } else {
-        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right).red().to_string()
+        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right)
+            .red()
+            .to_string()
     };
     out.push_str(&bottom_border);
 
@@ -229,7 +242,10 @@ pub fn render_section_divider(title: &str) -> String {
     let used_width = prefix.chars().count() + title_vis_len + suffix_spacing.chars().count();
     let remaining_width = total_width.saturating_sub(used_width).max(3);
 
-    format!("{prefix}{title}{suffix_spacing}{}", "─".repeat(remaining_width))
+    format!(
+        "{prefix}{title}{suffix_spacing}{}",
+        "─".repeat(remaining_width)
+    )
 }
 
 /// Renders a database breakdown row with aligned dots, count, and MB size.
@@ -245,7 +261,11 @@ pub fn render_database_row(
 
     let count_str = if let Some(skipped) = skipped_count {
         if skipped > 0 {
-            format!("{:>4} files ({} skipped)", count, skipped.to_string().yellow())
+            format!(
+                "{:>4} files ({} skipped)",
+                count,
+                skipped.to_string().yellow()
+            )
         } else {
             format!("{:>4} files", count)
         }

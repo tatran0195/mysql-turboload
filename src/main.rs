@@ -215,7 +215,10 @@ fn run_import(mut cli: ImportArgs) -> Result<()> {
     let mut card_items = vec![
         ("Target Server", format!("{}:{}", cli.host, cli.port)),
         ("MySQL User", cli.user.clone()),
-        ("MySQL Client", ui::truncate_path_str(&mysql_bin.display().to_string(), 52)),
+        (
+            "MySQL Client",
+            ui::truncate_path_str(&mysql_bin.display().to_string(), 52),
+        ),
         ("Source Folder", cli.dir.display().to_string()),
         ("Manifest File", manifest.file_path().display().to_string()),
         ("Workers", format!("{} threads", cli.resolved_workers())),

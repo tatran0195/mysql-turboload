@@ -454,24 +454,35 @@ pub fn print_summary(summary: &RunSummary, log_dir: &std::path::Path) {
     } else if is_success {
         "✔ IMPORT COMPLETED SUCCESSFULLY".to_string()
     } else {
-        format!("✖ IMPORT FINISHED WITH {} ERRORS", summary.failed_tasks.len())
+        format!(
+            "✖ IMPORT FINISHED WITH {} ERRORS",
+            summary.failed_tasks.len()
+        )
     };
 
     let completed_mb = (summary.completed_bytes as f64) / (1024.0 * 1024.0);
     let total_secs = summary.elapsed.as_secs_f64().max(0.001);
     let mb_per_sec = completed_mb / total_secs;
 
-    let mut metrics = vec![
-        (
-            "Tables Imported",
-            format!("{} / {}", summary.completed_count.to_string().green().bold(), summary.total_tasks),
+    let mut metrics = vec![(
+        "Tables Imported",
+        format!(
+            "{} / {}",
+            summary.completed_count.to_string().green().bold(),
+            summary.total_tasks
         ),
-    ];
+    )];
 
     if !summary.failed_tasks.is_empty() {
         metrics.push((
             "Failed Tables",
-            summary.failed_tasks.len().to_string().red().bold().to_string(),
+            summary
+                .failed_tasks
+                .len()
+                .to_string()
+                .red()
+                .bold()
+                .to_string(),
         ));
     }
 
@@ -486,12 +497,12 @@ pub fn print_summary(summary: &RunSummary, log_dir: &std::path::Path) {
         ),
     ));
 
-    metrics.push((
-        "Total Duration",
-        format_duration_compact(summary.elapsed),
-    ));
+    metrics.push(("Total Duration", format_duration_compact(summary.elapsed)));
 
-    println!("{}", ui::render_summary_card(&status_title, is_success, is_cancelled, &metrics));
+    println!(
+        "{}",
+        ui::render_summary_card(&status_title, is_success, is_cancelled, &metrics)
+    );
 
     if !summary.failed_tasks.is_empty() {
         println!();

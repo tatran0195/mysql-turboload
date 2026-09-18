@@ -394,16 +394,14 @@ mod tests {
 
     #[test]
     fn test_export_args_dir_flags() {
-        let cli_short =
-            Cli::try_parse_from(["zephyr", "export", "-d", "./my-target"]).unwrap();
+        let cli_short = Cli::try_parse_from(["zephyr", "export", "-d", "./my-target"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_short.command {
             assert_eq!(export_args.dir, PathBuf::from("./my-target"));
         } else {
             panic!("Expected export command");
         }
 
-        let cli_long =
-            Cli::try_parse_from(["zephyr", "export", "--dir", "./my-target"]).unwrap();
+        let cli_long = Cli::try_parse_from(["zephyr", "export", "--dir", "./my-target"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_long.command {
             assert_eq!(export_args.dir, PathBuf::from("./my-target"));
         } else {

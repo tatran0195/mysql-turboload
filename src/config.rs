@@ -534,9 +534,14 @@ mod tests {
     #[test]
     fn test_zephyr_example_toml_parses_successfully() {
         let example_path = Path::new("zephyr.example.toml");
-        assert!(example_path.exists(), "zephyr.example.toml should exist in repository root");
-        let content = std::fs::read_to_string(example_path).expect("failed to read zephyr.example.toml");
-        let cfg = ZephyrConfig::from_toml_str(&content).expect("zephyr.example.toml should parse cleanly");
+        assert!(
+            example_path.exists(),
+            "zephyr.example.toml should exist in repository root"
+        );
+        let content =
+            std::fs::read_to_string(example_path).expect("failed to read zephyr.example.toml");
+        let cfg = ZephyrConfig::from_toml_str(&content)
+            .expect("zephyr.example.toml should parse cleanly");
 
         // Verify active default settings
         assert_eq!(cfg.connection.host.as_deref(), Some("127.0.0.1"));
@@ -572,4 +577,3 @@ mod tests {
         assert_eq!(full_cfg.export.routines, Some(true));
     }
 }
-
