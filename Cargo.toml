@@ -25,7 +25,7 @@ serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 walkdir = "2.5"
 libc = "0.2"
-flate2 = "1.0"
+flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
 
 [profile.release]
 opt-level = 3
