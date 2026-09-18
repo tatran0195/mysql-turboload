@@ -1,0 +1,23 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Ingestion logs & manifests generated during local runs
+import-logs/
+*.err.log
+manifest.json
+manifest.json.*
+failed_files.txt
