@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod db_checker;
 mod exporter;
 mod manifest;
