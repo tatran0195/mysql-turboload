@@ -1,12 +1,12 @@
-# MySQL TurboLoad Enterprise (v1.0.0)
+# Zephyr (v1.0.0)
 
-[![CI](https://github.com/enterprise/mysql-turboload/actions/workflows/ci.yml/badge.svg)](https://github.com/enterprise/mysql-turboload/actions/workflows/ci.yml)
+[![CI](https://github.com/enterprise/zephyr/actions/workflows/ci.yml/badge.svg)](https://github.com/enterprise/zephyr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
-**MySQL TurboLoad Enterprise** is a high-performance, concurrent bulk data migration, restoration, and export engine engineered in Rust. Built as a drop-in replacement for legacy PowerShell and shell migration scripts, TurboLoad eliminates worker thread starvation via dynamic work stealing, coordinates non-blocking server-side InnoDB tuning, prevents pipe buffer deadlocks, and guarantees fault-tolerant resumption through atomic JSON state manifests.
+**Zephyr** is a high-performance, concurrent bulk data migration, restoration, and export engine engineered in Rust. Built as a modern replacement for legacy PowerShell and shell migration scripts, Zephyr eliminates worker thread starvation via dynamic work stealing, coordinates non-blocking server-side InnoDB tuning, prevents pipe buffer deadlocks, and guarantees fault-tolerant resumption through atomic JSON state manifests.
 
-TurboLoad provides **bidirectional acceleration**:
+Zephyr provides **bidirectional acceleration**:
 1. **Parallel Ingestion (`import`)**: Multi-worker bulk restoration of MySQL Workbench dump project folders (supporting both plain `.sql` and compressed `.sql.gz` archives with transparent streaming decompression).
 2. **Parallel Extraction (`export`)**: High-throughput multi-worker table extraction generating 100% Workbench-compatible dumps, with real-time zero-spool Gzip streaming compression (`--compress` / `-z`) and recursive directory auto-creation.
 
@@ -14,7 +14,7 @@ TurboLoad provides **bidirectional acceleration**:
 
 ## Architectural Comparison: Enterprise vs. Legacy Tools
 
-| Feature / Metric | Traditional Tools (`mysqldump` / PowerShell) | MySQL TurboLoad Enterprise |
+| Feature / Metric | Traditional Tools (`mysqldump` / PowerShell) | Zephyr |
 | :--- | :--- | :--- |
 | **Export Concurrency** | Single-threaded sequential dump. Dumps one table at a time; takes hours on large schemas. | **Parallel Multi-Worker Extraction**. Concurrently extracts tables across 4 to 16 native OS threads sorted LPT. |
 | **Compression & Storage** | Uncompressed dumps or external gzip subprocess pipes requiring 2x disk space and temp spooling. | **Zero-Spool Streaming Gzip (`--compress` / `-z`)**. Direct in-memory streaming from `mysqldump` to `.sql.gz` with zero disk temp files. Transparent streaming decompression on `import`. |
@@ -33,7 +33,7 @@ TurboLoad provides **bidirectional acceleration**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    MySQL TurboLoad Enterprise                   │
+│                             Zephyr                              │
 ├─────────────────────────────────────────────────────────────────┤
 │ 1. Schema Scanner & Metadata Discovery                          │
 │    • High-speed regex header parsing (USE, Database:, CREATE)    │
@@ -87,8 +87,8 @@ The release profile is pre-configured with maximum production optimizations:
 - `strip = true` (Removes debug symbols, shrinking binary size to ~2.7 MB)
 
 The compiled standalone binary is located at:
-- **Linux / macOS**: `target/release/mysql-turboload`
-- **Windows**: `target/release/mysql-turboload.exe`
+- **Linux / macOS**: `target/release/zephyr`
+- **Windows**: `target/release/zephyr.exe`
 
 To install directly to your system's global binary PATH:
 ```bash
@@ -106,7 +106,7 @@ Streams tables directly from `mysqldump` through an in-memory Gzip encoder (`fla
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload export \
+zephyr export \
   --database production_db \
   -d ./Dump20260917 \
   --compress \
@@ -115,7 +115,7 @@ mysql-turboload export \
   --user root -p
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe export `
+.\target\release\zephyr.exe export `
   --database production_db `
   -d "D:\Backups\2026\09\production_db" `
   --compress `
@@ -126,7 +126,7 @@ mysql-turboload export \
 > [!TIP]
 > **Directory Resilience & Ergonomics**:
 > - You can use `-d`, `--dir`, `-o`, or `--output-dir` interchangeably.
-> - If the target directory path (e.g. `D:\Backups\2026\09\production_db`) does not exist, TurboLoad automatically creates the entire directory tree recursively.
+> - If the target directory path (e.g. `D:\Backups\2026\09\production_db`) does not exist, Zephyr automatically creates the entire directory tree recursively.
 > - Under `--dry-run`, missing directories are marked as `(will be created)` without touching disk state.
 > - If interrupted or cancelled (`Ctrl+C`), partial uncompressed or corrupted `.sql.gz` files are cleanly removed.
 
@@ -137,7 +137,7 @@ Dumps every non-system database into separate table files in parallel:
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload export \
+zephyr export \
   --all-databases \
   --dir ./EnterpriseFullBackup \
   --compress \
@@ -146,7 +146,7 @@ mysql-turboload export \
   --user root -p
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe export `
+.\target\release\zephyr.exe export `
   --all-databases `
   --dir "D:\Backups\EnterpriseFullBackup" `
   --compress `
@@ -162,14 +162,14 @@ Export only specific critical tables, or export a schema while excluding heavy t
 
 ```bash
 # Linux / macOS (Bash) - Specific tables only
-mysql-turboload export \
+zephyr export \
   --database production_db \
   -d ./CoreTables \
   --tables "users,orders,order_items,payments" \
   --compress
 
 # Windows (PowerShell) - Exclude audit/log tables
-.\target\release\mysql-turboload.exe export `
+.\target\release\zephyr.exe export `
   --database production_db `
   -d "D:\Backups\CoreSnapshot" `
   --exclude-tables "audit_logs,session_cache,request_traces" `
@@ -181,10 +181,10 @@ mysql-turboload export \
 ### 4. Schema-Only or Data-Only Snapshots
 ```bash
 # Linux / macOS (Bash) - Dump DDL structure only (no row data)
-mysql-turboload export --database production_db -d ./SchemaOnly --no-data
+zephyr export --database production_db -d ./SchemaOnly --no-data
 
 # Windows (PowerShell) - Dump raw table data only (no CREATE TABLE statements)
-.\target\release\mysql-turboload.exe export --database production_db -d "D:\Backups\DataOnly" --no-create-info --compress
+.\target\release\zephyr.exe export --database production_db -d "D:\Backups\DataOnly" --no-create-info --compress
 ```
 
 ---
@@ -194,10 +194,10 @@ Inspect table schemas, estimated row counts, and data sizes via `information_sch
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload export --database production_db -d ./NonExistentFolder --dry-run
+zephyr export --database production_db -d ./NonExistentFolder --dry-run
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe export --database production_db -d "D:\Backups\FutureDump" --dry-run
+.\target\release\zephyr.exe export --database production_db -d "D:\Backups\FutureDump" --dry-run
 ```
 
 ---
@@ -207,24 +207,24 @@ If an export was stopped or the network disconnected, `--resume` reads the `mani
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload export --database production_db --dir ./Dump20260917 --compress --resume
+zephyr export --database production_db --dir ./Dump20260917 --compress --resume
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe export --database production_db --dir "D:\Backups\2026\09\production_db" --compress --resume
+.\target\release\zephyr.exe export --database production_db --dir "D:\Backups\2026\09\production_db" --compress --resume
 ```
 
 ---
 
 ## Production Usage: PARALLEL IMPORT
 
-Restore MySQL Workbench dump project folders at wire speed. TurboLoad automatically discovers and restores both uncompressed `.sql` files and Gzip-compressed `.sql.gz` dump archives with **transparent on-the-fly streaming decompression** (zero disk temp files):
+Restore MySQL Workbench dump project folders at wire speed. Zephyr automatically discovers and restores both uncompressed `.sql` files and Gzip-compressed `.sql.gz` dump archives with **transparent on-the-fly streaming decompression** (zero disk temp files):
 
 ### 1. High-Performance Bulk Load with Engine Tuning (Recommended)
 Automatically enables memory-buffered transaction logging, sets I/O capacity to 2,500 IOPS, buffers secondary indexes in RAM, and allocates a 4 GB buffer pool:
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload import \
+zephyr import \
   --dir "./Dump20260917" \
   --host 127.0.0.1 \
   --user root -p \
@@ -234,7 +234,7 @@ mysql-turboload import \
   --io-capacity 2500
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe import `
+.\target\release\zephyr.exe import `
   -d "D:\Backups\2026\09\production_db" `
   -u root -p `
   --workers 6 `
@@ -244,19 +244,19 @@ mysql-turboload import \
 ```
 > [!NOTE]
 > - **Zero-Config Compressed Restores**: Dump archives ending in `.sql.gz` are automatically detected and decompressed in-memory directly into the `mysql` client process stdin. You do not need external utilities (`gzip`, `7-Zip`, or `tar`).
-> - **Backwards Compatibility**: Running `mysql-turboload -d "..."` without the `import` keyword works identically.
+> - **Backwards Compatibility**: Running `zephyr -d "..."` without the `import` keyword works identically.
 
 ---
 
 ### 2. Resuming an Interrupted Ingestion
-If an ingestion job was stopped (or cancelled via `Ctrl+C`), restart it with `--resume`. TurboLoad automatically discovers `manifest.json` across standard paths and skips all completed tables in milliseconds:
+If an ingestion job was stopped (or cancelled via `Ctrl+C`), restart it with `--resume`. Zephyr automatically discovers `manifest.json` across standard paths and skips all completed tables in milliseconds:
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload import --dir "./Dump20260917" --resume --tune-server
+zephyr import --dir "./Dump20260917" --resume --tune-server
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe import -d "D:\Backups\2026\09\production_db" --resume --tune-server
+.\target\release\zephyr.exe import -d "D:\Backups\2026\09\production_db" --resume --tune-server
 ```
 
 ---
@@ -266,10 +266,10 @@ Inspect table sizes, SQL header detection (scans up to `--scan-depth` lines even
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload import --dir "./Dump20260917" --dry-run
+zephyr import --dir "./Dump20260917" --dry-run
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe import -d "D:\Backups\2026\09\production_db" --dry-run
+.\target\release\zephyr.exe import -d "D:\Backups\2026\09\production_db" --dry-run
 ```
 
 ---
@@ -279,10 +279,10 @@ If a subset of tables failed due to bad SQL syntax or network drops, target only
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload import --dir "./Dump20260917" --retry-file "logs/failed_files.txt"
+zephyr import --dir "./Dump20260917" --retry-file "logs/failed_files.txt"
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe import -d "D:\Backups\2026\09\production_db" --retry-file "logs\failed_files.txt"
+.\target\release\zephyr.exe import -d "D:\Backups\2026\09\production_db" --retry-file "logs\failed_files.txt"
 ```
 
 ---
@@ -292,25 +292,26 @@ Restore only tables matching a specific substring (e.g. `users` or `orders`):
 
 ```bash
 # Linux / macOS (Bash)
-mysql-turboload import --dir "./Dump20260917" --filter "users"
+zephyr import --dir "./Dump20260917" --filter "users"
 
 # Windows (PowerShell)
-.\target\release\mysql-turboload.exe import -d "D:\Backups\2026\09\production_db" --filter "users"
+.\target\release\zephyr.exe import -d "D:\Backups\2026\09\production_db" --filter "users"
 ```
 
 ---
 
-## Persistent Configuration File (`turboload.toml`)
+## Persistent Configuration File (`zephyr.toml`)
 
-MySQL TurboLoad supports persistent configuration via a TOML file, eliminating the need to pass repetitive connection and performance parameters on every CLI invocation.
+Zephyr supports persistent configuration via a TOML file, eliminating the need to pass repetitive connection and performance parameters on every CLI invocation.
 
 ### Auto-Discovery Order
-When `--config` is not explicitly passed, `mysql-turboload` automatically searches for a configuration file in the following order:
-1. `./turboload.toml` (Current Working Directory)
-2. `./mysql-turboload.toml` (Current Working Directory)
-3. Platform user configuration directory:
-   * **Windows**: `%APPDATA%\mysql-turboload\config.toml` (e.g. `C:\Users\<user>\AppData\Roaming\mysql-turboload\config.toml`)
-   * **Linux / macOS**: `~/.config/mysql-turboload/config.toml` (or `$XDG_CONFIG_HOME/mysql-turboload/config.toml`)
+When `--config` is not explicitly passed, `zephyr` automatically searches for a configuration file in the following order:
+1. `./zephyr.toml` (Current Working Directory)
+2. `./mysql-zephyr.toml` (Current Working Directory)
+3. `./turboload.toml` & `./mysql-turboload.toml` (Backwards-compatibility fallbacks)
+4. Platform user configuration directory:
+   * **Windows**: `%APPDATA%\zephyr\config.toml` (fallback: `%APPDATA%\mysql-turboload\config.toml`)
+   * **Linux / macOS**: `~/.config/zephyr/config.toml` (fallback: `~/.config/mysql-turboload/config.toml`)
 
 ### Precedence Hierarchy
 Settings resolve according to this strict hierarchy:
@@ -321,7 +322,7 @@ Settings resolve according to this strict hierarchy:
 
 To bypass configuration loading entirely (e.g. in CI/CD pipelines), pass the `--no-config` flag. To specify a custom configuration file path, use `--config <FILE>`.
 
-### Example `turboload.toml`
+### Example `zephyr.toml`
 
 ```toml
 [connection]
@@ -363,7 +364,7 @@ resume = true
 
 ### Root & Import Command Options
 ```text
-Usage: mysql-turboload [OPTIONS] [COMMAND]
+Usage: zephyr [OPTIONS] [COMMAND]
 
 Commands:
   import  Ingest and restore MySQL dump files in parallel (default command)
@@ -403,7 +404,7 @@ Options:
 
 ### Export Command Options
 ```text
-Usage: mysql-turboload export [OPTIONS]
+Usage: zephyr export [OPTIONS]
 
 Options:
       --config <FILE>                 Explicit path to a TOML configuration file
