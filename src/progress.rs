@@ -1,8 +1,117 @@
 use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::time::Duration;
+use std::io::Read;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::runner::{RunSummary, RunSummaryState, WorkerEvent};
+
+/// Transparent wrapper around any `Read` stream that counts bytes read using an `AtomicU64`.
+pub struct CountingReader<R> {
+    inner: R,
+    bytes_read: Arc<AtomicU64>,
+}
+
+impl<R> CountingReader<R> {
+    pub fn new(inner: R, bytes_read: Arc<AtomicU64>) -> Self {
+        Self { inner, bytes_read }
+    }
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            self.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
+        }
+        Ok(n)
+    }
+}
+
+/// Thread-safe shared state for an individual active worker.
+pub struct WorkerLiveState {
+    pub worker_id: usize,
+    pub is_active: AtomicBool,
+    pub database: parking_lot::RwLock<String>,
+    pub file_name: parking_lot::RwLock<String>,
+    pub total_bytes: AtomicU64,
+    pub bytes_current: Arc<AtomicU64>,
+    pub start_time: parking_lot::RwLock<Option<Instant>>,
+    pub is_committing: AtomicBool,
+    pub smoothed_rate: parking_lot::RwLock<f64>, // MB/s
+    pub last_sample_bytes: AtomicU64,
+    pub last_sample_time: parking_lot::RwLock<Option<Instant>>,
+}
+
+impl WorkerLiveState {
+    pub fn new(worker_id: usize) -> Self {
+        Self {
+            worker_id,
+            is_active: AtomicBool::new(false),
+            database: parking_lot::RwLock::new(String::new()),
+            file_name: parking_lot::RwLock::new(String::new()),
+            total_bytes: AtomicU64::new(0),
+            bytes_current: Arc::new(AtomicU64::new(0)),
+            start_time: parking_lot::RwLock::new(None),
+            is_committing: AtomicBool::new(false),
+            smoothed_rate: parking_lot::RwLock::new(0.0),
+            last_sample_bytes: AtomicU64::new(0),
+            last_sample_time: parking_lot::RwLock::new(None),
+        }
+    }
+
+    pub fn start_task(&self, database: &str, file_name: &str, total_bytes: u64) {
+        *self.database.write() = database.to_string();
+        *self.file_name.write() = file_name.to_string();
+        self.total_bytes.store(total_bytes, Ordering::SeqCst);
+        self.bytes_current.store(0, Ordering::SeqCst);
+        self.last_sample_bytes.store(0, Ordering::SeqCst);
+        let now = Instant::now();
+        *self.start_time.write() = Some(now);
+        *self.last_sample_time.write() = Some(now);
+        *self.smoothed_rate.write() = 0.0;
+        self.is_committing.store(false, Ordering::SeqCst);
+        self.is_active.store(true, Ordering::SeqCst);
+    }
+
+    pub fn finish_task(&self) {
+        self.is_active.store(false, Ordering::SeqCst);
+        self.is_committing.store(false, Ordering::SeqCst);
+    }
+
+    pub fn mark_committing(&self) {
+        self.is_committing.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Calculates ETA based on remaining bytes and current throughput (bytes/sec).
+pub fn calculate_eta(bytes_done: u64, total_bytes: u64, speed_bps: f64) -> Option<Duration> {
+    if bytes_done >= total_bytes || speed_bps <= 10.0 {
+        return None;
+    }
+    let remaining_bytes = total_bytes.saturating_sub(bytes_done);
+    let seconds = (remaining_bytes as f64) / speed_bps;
+    if seconds.is_nan() || seconds.is_infinite() || seconds > 86400.0 * 30.0 {
+        None
+    } else {
+        Some(Duration::from_secs_f64(seconds))
+    }
+}
+
+/// Formats duration into compact MM:SS or HH:MM:SS.
+pub fn format_duration_compact(d: Duration) -> String {
+    let secs = d.as_secs();
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    let rem_secs = secs % 60;
+    if hours > 0 {
+        format!("{hours:02}:{mins:02}:{rem_secs:02}")
+    } else {
+        format!("{mins:02}:{rem_secs:02}")
+    }
+}
+
 
 pub struct ProgressTracker {
     pub multi_progress: Option<MultiProgress>,
@@ -253,3 +362,62 @@ pub fn print_summary(summary: &RunSummary, log_dir: &std::path::Path) {
     }
     println!();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_counting_reader_tracks_exact_bytes() {
+        let data = b"Hello, MySQL TurboLoad Enterprise!";
+        let counter = Arc::new(AtomicU64::new(0));
+        let mut reader = CountingReader::new(Cursor::new(data), Arc::clone(&counter));
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut reader, &mut buf).unwrap();
+        assert_eq!(counter.load(Ordering::Relaxed), data.len() as u64);
+        assert_eq!(buf, data);
+    }
+
+    #[test]
+    fn test_eta_calculation() {
+        // 50 MB done out of 100 MB at 10 MB/s -> exactly 5 seconds ETA
+        let eta = calculate_eta(50 * 1024 * 1024, 100 * 1024 * 1024, 10.0 * 1024.0 * 1024.0);
+        assert_eq!(eta.map(|d| d.as_secs()), Some(5));
+
+        // When done >= total -> None
+        assert_eq!(calculate_eta(100, 100, 1000.0), None);
+        assert_eq!(calculate_eta(105, 100, 1000.0), None);
+
+        // When speed is zero or negligible -> None
+        assert_eq!(calculate_eta(50, 100, 0.0), None);
+    }
+
+    #[test]
+    fn test_format_duration_compact() {
+        assert_eq!(format_duration_compact(Duration::from_secs(5)), "00:05");
+        assert_eq!(format_duration_compact(Duration::from_secs(65)), "01:05");
+        assert_eq!(format_duration_compact(Duration::from_secs(3665)), "01:01:05");
+    }
+
+    #[test]
+    fn test_worker_live_state_lifecycle() {
+        let state = WorkerLiveState::new(1);
+        assert!(!state.is_active.load(Ordering::SeqCst));
+        assert!(!state.is_committing.load(Ordering::SeqCst));
+
+        state.start_task("mydb", "table.sql.gz", 1000);
+        assert!(state.is_active.load(Ordering::SeqCst));
+        assert_eq!(*state.database.read(), "mydb");
+        assert_eq!(*state.file_name.read(), "table.sql.gz");
+        assert_eq!(state.total_bytes.load(Ordering::SeqCst), 1000);
+
+        state.mark_committing();
+        assert!(state.is_committing.load(Ordering::SeqCst));
+
+        state.finish_task();
+        assert!(!state.is_active.load(Ordering::SeqCst));
+        assert!(!state.is_committing.load(Ordering::SeqCst));
+    }
+}
+
