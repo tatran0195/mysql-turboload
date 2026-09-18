@@ -6,7 +6,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -19,7 +19,7 @@ use crate::cli::ExportArgs;
 use crate::manifest::ManifestManager;
 use crate::mysql_locator::{find_mysql, find_mysqldump};
 use crate::option_file::MySqlOptionFile;
-use crate::progress::ProgressTracker;
+use crate::progress::{CountingReader, ProgressTracker, WorkerLiveState};
 use crate::runner::{FailedTask, RunSummary, RunSummaryState, WorkerEvent};
 
 #[derive(Debug, Clone)]
@@ -285,6 +285,7 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
         option_file.path(),
         tasks,
         manifest,
+        tracker.live_states(),
         move |event, state| {
             tracker_callback.handle_event(event, state);
         },
@@ -402,6 +403,7 @@ fn execute_export_tasks<F>(
     option_file: &Path,
     tasks: Vec<ExportTask>,
     manifest: Arc<ManifestManager>,
+    live_states: Vec<Arc<WorkerLiveState>>,
     event_callback: F,
 ) -> Result<RunSummary>
 where
@@ -453,12 +455,15 @@ where
         let manifest = Arc::clone(&manifest);
         let cancelled = Arc::clone(&cancelled);
         let active_pids = Arc::clone(&active_pids);
+        let live_state = Arc::clone(&live_states[worker_id - 1]);
 
         let handle = thread::spawn(move || {
             while let Ok(task) = task_rx.recv() {
                 if cancelled.load(Ordering::SeqCst) {
                     break;
                 }
+
+                live_state.start_task(&task.database, &task.table_name, task.estimated_bytes);
 
                 let _ = event_tx.send(WorkerEvent::Started {
                     worker_id,
@@ -469,7 +474,7 @@ where
 
                 let task_start = Instant::now();
 
-                // Create output file and write standard Workbench/mysqldump header
+                // Create standard Workbench/mysqldump header
                 let header = format!(
                     "-- ------------------------------------------------------\n\
                      -- MySQL TurboLoad Enterprise Dump\n\
@@ -479,62 +484,6 @@ where
                      --\n\n",
                     args_clone.host, task.database, task.database
                 );
-
-                let append_file = if !args_clone.compress {
-                    if let Err(e) = (|| -> Result<()> {
-                        let mut f = File::create(&task.output_path)?;
-                        f.write_all(header.as_bytes())?;
-                        Ok(())
-                    })() {
-                        let log_path = log_dir_clone.join(format!(
-                            "{}__{}.export.err.log",
-                            task.database, task.table_name
-                        ));
-                        let _ = fs::write(&log_path, format!("Failed to create output file: {e}"));
-                        let _ = event_tx.send(WorkerEvent::Failed {
-                            worker_id,
-                            task: FailedTask {
-                                file_path: task.output_path.clone(),
-                                file_name: task.file_name.clone(),
-                                database: task.database.clone(),
-                                size_mb: (task.estimated_bytes as f64) / (1024.0 * 1024.0),
-                                exit_code: None,
-                                error_snippet: e.to_string(),
-                                log_path,
-                            },
-                        });
-                        continue;
-                    }
-
-                    match OpenOptions::new().append(true).open(&task.output_path) {
-                        Ok(f) => Some(f),
-                        Err(e) => {
-                            let log_path = log_dir_clone.join(format!(
-                                "{}__{}.export.err.log",
-                                task.database, task.table_name
-                            ));
-                            let _ = fs::write(
-                                &log_path,
-                                format!("Failed to open output file for append: {e}"),
-                            );
-                            let _ = event_tx.send(WorkerEvent::Failed {
-                                worker_id,
-                                task: FailedTask {
-                                    file_path: task.output_path.clone(),
-                                    file_name: task.file_name.clone(),
-                                    database: task.database.clone(),
-                                    size_mb: (task.estimated_bytes as f64) / (1024.0 * 1024.0),
-                                    exit_code: None,
-                                    error_snippet: e.to_string(),
-                                    log_path,
-                                },
-                            });
-                            continue;
-                        }
-                    }
-                } else {
-                    None
-                };
 
                 let mut cmd = Command::new(&mysqldump_bin_buf);
                 cmd.arg(format!(
@@ -575,16 +524,13 @@ where
                 cmd.arg(&task.database);
                 cmd.arg(&task.table_name);
 
-                if let Some(f) = append_file {
-                    cmd.stdout(Stdio::from(f));
-                } else {
-                    cmd.stdout(Stdio::piped());
-                }
+                cmd.stdout(Stdio::piped());
                 cmd.stderr(Stdio::piped());
 
                 let mut child = match cmd.spawn() {
                     Ok(c) => c,
                     Err(e) => {
+                        live_state.finish_task();
                         let log_path = log_dir_clone.join(format!(
                             "{}__{}.export.err.log",
                             task.database, task.table_name
@@ -606,35 +552,67 @@ where
                     }
                 };
 
-                let compress_handle = if args_clone.compress {
-                    let stdout_stream = child.stdout.take();
-                    let out_path = task.output_path.clone();
-                    let header_content = header.clone();
+                let stdout_stream = child.stdout.take().unwrap();
+                let live_counter = Arc::clone(&live_state.bytes_current);
+                let live_committing = Arc::clone(&live_state);
+                let counting_stdout = CountingReader::new(stdout_stream, live_counter);
+                let out_path = task.output_path.clone();
+                let header_content = header.clone();
+                let is_compress = args_clone.compress;
 
-                    Some(thread::spawn(move || -> Result<()> {
+                let writer_handle = thread::spawn(move || -> Result<()> {
+                    let mut counting_reader = counting_stdout;
+                    let mut transfer_buf = vec![0u8; 256 * 1024];
+
+                    if is_compress {
                         let file = File::create(&out_path).with_context(|| {
                             format!("Failed to create output file: {}", out_path.display())
                         })?;
-                        let buf_writer = std::io::BufWriter::with_capacity(128 * 1024, file);
+                        let buf_writer = std::io::BufWriter::with_capacity(256 * 1024, file);
                         let mut encoder = GzEncoder::new(buf_writer, Compression::default());
                         encoder.write_all(header_content.as_bytes())?;
 
-                        if let Some(mut stream) = stdout_stream {
-                            let mut buf = [0u8; 65536];
-                            loop {
-                                let n = std::io::Read::read(&mut stream, &mut buf)?;
-                                if n == 0 {
-                                    break;
+                        loop {
+                            let n = match std::io::Read::read(&mut counting_reader, &mut transfer_buf) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(e) => {
+                                    if e.kind() == std::io::ErrorKind::BrokenPipe {
+                                        break;
+                                    }
+                                    return Err(e.into());
                                 }
-                                encoder.write_all(&buf[..n])?;
-                            }
+                            };
+                            encoder.write_all(&transfer_buf[..n])?;
                         }
+                        live_committing.mark_committing();
                         encoder.finish()?;
-                        Ok(())
-                    }))
-                } else {
-                    None
-                };
+                    } else {
+                        let file = File::create(&out_path).with_context(|| {
+                            format!("Failed to create output file: {}", out_path.display())
+                        })?;
+                        let mut buf_writer = std::io::BufWriter::with_capacity(256 * 1024, file);
+                        buf_writer.write_all(header_content.as_bytes())?;
+
+                        loop {
+                            let n = match std::io::Read::read(&mut counting_reader, &mut transfer_buf) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(e) => {
+                                    if e.kind() == std::io::ErrorKind::BrokenPipe {
+                                        break;
+                                    }
+                                    return Err(e.into());
+                                }
+                            };
+                            buf_writer.write_all(&transfer_buf[..n])?;
+                        }
+                        live_committing.mark_committing();
+                        buf_writer.flush()?;
+                    }
+
+                    Ok(())
+                });
 
                 // Drain stderr asynchronously to avoid pipe deadlock
                 let stderr_stream = child.stderr.take();
@@ -678,14 +656,12 @@ where
                 }
 
                 let stderr_bytes = err_reader.join().unwrap_or_default();
-                let compress_res = if let Some(h) = compress_handle {
-                    match h.join() {
-                        Ok(res) => res,
-                        Err(_) => Err(anyhow::anyhow!("Compression thread panicked")),
-                    }
-                } else {
-                    Ok(())
+                let writer_res = match writer_handle.join() {
+                    Ok(res) => res,
+                    Err(_) => Err(anyhow::anyhow!("Writer thread panicked")),
                 };
+
+                live_state.finish_task();
 
                 if cancelled.load(Ordering::SeqCst) {
                     let _ = fs::remove_file(&task.output_path);
@@ -694,7 +670,7 @@ where
 
                 let elapsed_task = task_start.elapsed();
 
-                match (exit_status, compress_res) {
+                match (exit_status, writer_res) {
                     (Some(status), Ok(())) if status.success() => {
                         let _ = manifest.mark_completed(&task.file_name);
                         let _ = event_tx.send(WorkerEvent::Finished {
@@ -705,7 +681,7 @@ where
                             duration: elapsed_task,
                         });
                     }
-                    (Some(status), compress_result) => {
+                    (Some(status), writer_result) => {
                         let _ = fs::remove_file(&task.output_path);
                         let stderr_str = String::from_utf8_lossy(&stderr_bytes).to_string();
                         let log_path = log_dir_clone.join(format!(
@@ -713,8 +689,8 @@ where
                             task.database, task.table_name
                         ));
 
-                        let compress_err_str = if let Err(e) = compress_result {
-                            format!("\nCOMPRESSION ERROR: {e:#}\n")
+                        let writer_err_str = if let Err(e) = writer_result {
+                            format!("\nSTREAM WRITER ERROR: {e:#}\n")
                         } else {
                             String::new()
                         };
@@ -735,12 +711,12 @@ where
                             status.code(),
                             Utc::now().to_rfc3339(),
                             stderr_str.trim(),
-                            compress_err_str
+                            writer_err_str
                         );
                         let _ = fs::write(&log_path, log_content);
 
-                        let snippet = if !compress_err_str.is_empty() {
-                            "Compression streaming error".to_string()
+                        let snippet = if !writer_err_str.is_empty() {
+                            "Export streaming error".to_string()
                         } else {
                             stderr_str
                                 .lines()

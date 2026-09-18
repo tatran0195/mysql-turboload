@@ -31,6 +31,7 @@ impl<R: Read> Read for CountingReader<R> {
 
 /// Thread-safe shared state for an individual active worker.
 pub struct WorkerLiveState {
+    #[allow(dead_code)]
     pub worker_id: usize,
     pub is_active: AtomicBool,
     pub database: parking_lot::RwLock<String>,
@@ -117,21 +118,36 @@ pub struct ProgressTracker {
     pub multi_progress: Option<MultiProgress>,
     pub main_bar: Option<ProgressBar>,
     pub worker_bars: Vec<ProgressBar>,
+    pub live_states: Vec<Arc<WorkerLiveState>>,
+    pub completed_bytes: Arc<AtomicU64>,
+    pub failed_count: Arc<AtomicU64>,
+    pub stop_ticker: Arc<AtomicBool>,
+    pub ticker_handle: parking_lot::Mutex<Option<std::thread::JoinHandle<()>>>,
     pub no_progress: bool,
 }
 
 impl ProgressTracker {
     pub fn new(
         total_tasks: usize,
-        _total_bytes: u64,
+        total_bytes: u64,
         num_workers: usize,
         no_progress: bool,
     ) -> Self {
+        let mut live_states = Vec::new();
+        for i in 1..=num_workers {
+            live_states.push(Arc::new(WorkerLiveState::new(i)));
+        }
+
         if no_progress {
             return Self {
                 multi_progress: None,
                 main_bar: None,
                 worker_bars: Vec::new(),
+                live_states,
+                completed_bytes: Arc::new(AtomicU64::new(0)),
+                failed_count: Arc::new(AtomicU64::new(0)),
+                stop_ticker: Arc::new(AtomicBool::new(false)),
+                ticker_handle: parking_lot::Mutex::new(None),
                 no_progress: true,
             };
         }
@@ -163,12 +179,169 @@ impl ProgressTracker {
             worker_bars.push(wp);
         }
 
+        let completed_bytes = Arc::new(AtomicU64::new(0));
+        let failed_count = Arc::new(AtomicU64::new(0));
+        let stop_ticker = Arc::new(AtomicBool::new(false));
+
+        // Background sampling ticker: reads lock-free atomics every 200ms and updates UI
+        let stop_clone = Arc::clone(&stop_ticker);
+        let live_states_clone = live_states.clone();
+        let worker_bars_clone = worker_bars.clone();
+        let main_bar_clone = pb.clone();
+        let completed_bytes_ref = Arc::clone(&completed_bytes);
+        let failed_count_ref = Arc::clone(&failed_count);
+
+        let ticker_thread = std::thread::spawn(move || {
+            while !stop_clone.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(200));
+                if stop_clone.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                let mut max_active_eta: Option<Duration> = None;
+                let mut active_count = 0usize;
+                let mut live_active_bytes = 0u64;
+
+                for (i, wp) in worker_bars_clone.iter().enumerate() {
+                    if let Some(state) = live_states_clone.get(i) {
+                        if !state.is_active.load(Ordering::Relaxed) {
+                            continue;
+                        }
+                        active_count += 1;
+
+                        let db = state.database.read().clone();
+                        let file = state.file_name.read().clone();
+                        let total = state.total_bytes.load(Ordering::Relaxed);
+                        let current = state.bytes_current.load(Ordering::Relaxed);
+                        let is_committing = state.is_committing.load(Ordering::Relaxed);
+                        let start_opt = *state.start_time.read();
+
+                        live_active_bytes += current;
+
+                        let elapsed = start_opt.map_or(Duration::from_secs(0), |s| s.elapsed());
+
+                        // Update EWMA rolling speed
+                        let now = Instant::now();
+                        let prev_sample_bytes =
+                            state.last_sample_bytes.swap(current, Ordering::Relaxed);
+                        let prev_sample_time = state.last_sample_time.write().replace(now);
+
+                        if let Some(prev_time) = prev_sample_time {
+                            let dt = (now - prev_time).as_secs_f64();
+                            if dt >= 0.1 {
+                                let d_bytes = current.saturating_sub(prev_sample_bytes);
+                                let inst_rate_mb = (d_bytes as f64) / (1024.0 * 1024.0) / dt;
+                                let mut rate = state.smoothed_rate.write();
+                                *rate = if *rate <= 0.001 {
+                                    inst_rate_mb
+                                } else {
+                                    0.25 * inst_rate_mb + 0.75 * (*rate)
+                                };
+                            }
+                        }
+
+                        let rate_mb = *state.smoothed_rate.read();
+                        let speed_bps = rate_mb * 1024.0 * 1024.0;
+
+                        if is_committing || (total > 0 && current >= total) {
+                            let elapsed_str = format_duration_compact(elapsed);
+                            let total_mb = (total as f64) / (1024.0 * 1024.0);
+                            wp.set_message(format!(
+                                "{}/{} ({:.1} MB - 100%) [{}]",
+                                db.cyan(),
+                                file,
+                                total_mb,
+                                format!("Finalizing in MySQL... ({elapsed_str})")
+                                    .yellow()
+                                    .bold()
+                            ));
+                        } else {
+                            let cur_mb = (current as f64) / (1024.0 * 1024.0);
+                            let tot_mb = (total as f64) / (1024.0 * 1024.0);
+                            let pct = if total > 0 {
+                                ((current as f64) / (total as f64) * 100.0).min(99.9)
+                            } else {
+                                0.0
+                            };
+
+                            let eta_opt = calculate_eta(current, total, speed_bps);
+                            if let Some(eta) = eta_opt {
+                                if max_active_eta.map_or(true, |cur_max| eta > cur_max) {
+                                    max_active_eta = Some(eta);
+                                }
+                            }
+
+                            let rate_str = if elapsed.as_secs_f64() < 3.0 {
+                                "[Calculating ETA...]".dimmed().to_string()
+                            } else if rate_mb < 0.05 && elapsed.as_secs_f64() > 5.0 {
+                                format!("[{:.1} MB/s | Stalled on DB I/O]", rate_mb)
+                                    .yellow()
+                                    .to_string()
+                            } else if let Some(eta) = eta_opt {
+                                format!(
+                                    "[{:.1} MB/s | ETA: {}]",
+                                    rate_mb,
+                                    format_duration_compact(eta)
+                                )
+                            } else {
+                                format!("[{:.1} MB/s]", rate_mb)
+                            };
+
+                            wp.set_message(format!(
+                                "{}/{} : {:.1}/{:.1} MB ({:.0}%) {}",
+                                db.cyan(),
+                                file,
+                                cur_mb,
+                                tot_mb,
+                                pct,
+                                rate_str
+                            ));
+                        }
+                    }
+                }
+
+                // Update main bar message with live streaming MB and critical-path overall ETA
+                let done_from_finished = completed_bytes_ref.load(Ordering::Relaxed);
+                let total_done_mb =
+                    ((done_from_finished + live_active_bytes) as f64) / (1024.0 * 1024.0);
+                let total_mb_val = (total_bytes as f64) / (1024.0 * 1024.0);
+                let failed_count_val = failed_count_ref.load(Ordering::Relaxed);
+
+                let failed_str = if failed_count_val > 0 {
+                    format!(" | {} failed", failed_count_val.to_string().red())
+                } else {
+                    String::new()
+                };
+
+                let eta_str = if let Some(eta) = max_active_eta {
+                    format!(" | ETA: {}", format_duration_compact(eta).cyan().bold())
+                } else {
+                    String::new()
+                };
+
+                let msg = format!(
+                    "{:.1}/{:.1} MB | {} active{}{}",
+                    total_done_mb, total_mb_val, active_count, eta_str, failed_str
+                );
+                main_bar_clone.set_message(msg);
+            }
+        });
+
         Self {
             multi_progress: Some(mp),
             main_bar: Some(pb),
             worker_bars,
+            live_states,
+            completed_bytes,
+            failed_count,
+            stop_ticker,
+            ticker_handle: parking_lot::Mutex::new(Some(ticker_thread)),
             no_progress: false,
         }
+    }
+
+    pub fn live_states(&self) -> Vec<Arc<WorkerLiveState>> {
+        self.live_states.clone()
     }
 
     pub fn handle_event(&self, event: WorkerEvent, state: &RunSummaryState) {
@@ -212,22 +385,7 @@ impl ProgressTracker {
         }
 
         match &event {
-            WorkerEvent::Started {
-                worker_id,
-                file_name,
-                database,
-                size_bytes,
-            } => {
-                if let Some(wp) = self.worker_bars.get(worker_id - 1) {
-                    let mb = (*size_bytes as f64) / (1024.0 * 1024.0);
-                    wp.set_message(format!(
-                        "{} / {} ({:.1} MB)",
-                        database.cyan(),
-                        file_name,
-                        mb
-                    ));
-                }
-            }
+            WorkerEvent::Started { .. } => {}
             WorkerEvent::Finished {
                 worker_id,
                 file_name,
@@ -235,18 +393,20 @@ impl ProgressTracker {
                 duration,
                 ..
             } => {
+                self.completed_bytes
+                    .fetch_add(*size_bytes, Ordering::SeqCst);
                 if let Some(wp) = self.worker_bars.get(worker_id - 1) {
                     let mb = (*size_bytes as f64) / (1024.0 * 1024.0);
                     wp.set_message(format!(
-                        "{} ({:.1} MB in {:02}:{:02}) - next task...",
+                        "{} ({:.1} MB in {}) - next task...",
                         file_name.dimmed(),
                         mb,
-                        duration.as_secs() / 60,
-                        duration.as_secs() % 60
+                        format_duration_compact(*duration)
                     ));
                 }
             }
             WorkerEvent::Failed { worker_id, task } => {
+                self.failed_count.fetch_add(1, Ordering::SeqCst);
                 if let Some(wp) = self.worker_bars.get(worker_id - 1) {
                     wp.set_message(format!("FAILED {}", task.file_name).red().to_string());
                 }
@@ -267,24 +427,14 @@ impl ProgressTracker {
         if let Some(ref pb) = self.main_bar {
             let processed = state.completed_count + state.failed_tasks.len();
             pb.set_position(processed as u64);
-
-            let mb_done = (state.completed_bytes as f64) / (1024.0 * 1024.0);
-            let mb_total = (state.total_bytes as f64) / (1024.0 * 1024.0);
-
-            let active_count = state.worker_status.len();
-            let msg = if state.failed_tasks.is_empty() {
-                format!("{mb_done:.1}/{mb_total:.1} MB | {active_count} active")
-            } else {
-                format!(
-                    "{mb_done:.1}/{mb_total:.1} MB | {active_count} active | {} failed",
-                    state.failed_tasks.len().to_string().red()
-                )
-            };
-            pb.set_message(msg);
         }
     }
 
     pub fn finish(&self) {
+        self.stop_ticker.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.ticker_handle.lock().take() {
+            let _ = handle.join();
+        }
         for wp in &self.worker_bars {
             wp.finish_and_clear();
         }

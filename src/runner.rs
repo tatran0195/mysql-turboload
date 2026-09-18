@@ -508,6 +508,7 @@ pub struct RunSummaryState {
     pub _total_tasks: usize,
     pub completed_count: usize,
     pub failed_tasks: Vec<FailedTask>,
+    #[allow(dead_code)]
     pub total_bytes: u64,
     pub completed_bytes: u64,
     pub worker_status: HashMap<usize, String>,
