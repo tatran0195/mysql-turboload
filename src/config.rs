@@ -6,7 +6,7 @@ use crate::cli::{ExportArgs, ImportArgs};
 
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct TurboLoadConfig {
+pub struct ZephyrConfig {
     #[serde(default)]
     pub connection: ConnectionConfig,
     #[serde(default)]
@@ -73,7 +73,7 @@ pub struct ExportConfig {
     pub log_dir: Option<PathBuf>,
 }
 
-impl TurboLoadConfig {
+impl ZephyrConfig {
     pub fn from_toml_str(content: &str) -> Result<Self> {
         toml::from_str(content).context("Failed to parse TOML configuration")
     }
@@ -89,6 +89,8 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     }
 
     let candidates = [
+        PathBuf::from("zephyr.toml"),
+        PathBuf::from("mysql-zephyr.toml"),
         PathBuf::from("turboload.toml"),
         PathBuf::from("mysql-turboload.toml"),
     ];
@@ -99,19 +101,32 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     }
 
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        let p = PathBuf::from(appdata)
+        let zephyr_p = PathBuf::from(&appdata)
+            .join("zephyr")
+            .join("config.toml");
+        if zephyr_p.is_file() {
+            return Ok(Some(zephyr_p));
+        }
+        let legacy_p = PathBuf::from(appdata)
             .join("mysql-turboload")
             .join("config.toml");
-        if p.is_file() {
-            return Ok(Some(p));
+        if legacy_p.is_file() {
+            return Ok(Some(legacy_p));
         }
     } else if let Some(home) = std::env::var_os("HOME") {
-        let p = PathBuf::from(home)
+        let zephyr_p = PathBuf::from(&home)
+            .join(".config")
+            .join("zephyr")
+            .join("config.toml");
+        if zephyr_p.is_file() {
+            return Ok(Some(zephyr_p));
+        }
+        let legacy_p = PathBuf::from(home)
             .join(".config")
             .join("mysql-turboload")
             .join("config.toml");
-        if p.is_file() {
-            return Ok(Some(p));
+        if legacy_p.is_file() {
+            return Ok(Some(legacy_p));
         }
     }
 
@@ -119,10 +134,10 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
 }
 
 /// Loads and parses a TOML configuration file from disk.
-pub fn load_config(path: &Path) -> Result<TurboLoadConfig> {
+pub fn load_config(path: &Path) -> Result<ZephyrConfig> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read configuration file '{}'", path.display()))?;
-    TurboLoadConfig::from_toml_str(&content)
+    ZephyrConfig::from_toml_str(&content)
         .with_context(|| format!("In configuration file '{}'", path.display()))
 }
 
@@ -139,7 +154,7 @@ fn is_cli_or_env_provided(matches: &clap::ArgMatches, id: &str) -> bool {
 /// Settings explicitly passed on the CLI or via env take precedence over TOML settings.
 pub fn merge_import_config(
     args: &mut ImportArgs,
-    cfg: &TurboLoadConfig,
+    cfg: &ZephyrConfig,
     matches: &clap::ArgMatches,
 ) {
     // Connection settings
@@ -266,7 +281,7 @@ pub fn merge_import_config(
 /// Settings explicitly passed on the CLI or via env take precedence over TOML settings.
 pub fn merge_export_config(
     args: &mut ExportArgs,
-    cfg: &TurboLoadConfig,
+    cfg: &ZephyrConfig,
     matches: &clap::ArgMatches,
 ) {
     // Connection settings
@@ -439,7 +454,7 @@ mod tests {
             events = true
             triggers = true
         "#;
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = ZephyrConfig::from_toml_str(toml_str).unwrap();
         assert_eq!(cfg.connection.host.as_deref(), Some("192.168.1.100"));
         assert_eq!(cfg.connection.port, Some(3307));
         assert_eq!(cfg.connection.user.as_deref(), Some("dbadmin"));
@@ -467,7 +482,7 @@ mod tests {
     #[test]
     fn test_parse_minimal_empty_toml() {
         let toml_str = "";
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = ZephyrConfig::from_toml_str(toml_str).unwrap();
         assert!(cfg.connection.host.is_none());
         assert!(cfg.import.dir.is_none());
         assert!(cfg.export.dir.is_none());
@@ -479,7 +494,7 @@ mod tests {
             [import]
             worker = 8  # typo: should be workers
         "#;
-        let res = TurboLoadConfig::from_toml_str(toml_str);
+        let res = ZephyrConfig::from_toml_str(toml_str);
         assert!(res.is_err(), "Expected error on unknown field 'worker'");
     }
 
@@ -494,11 +509,11 @@ mod tests {
             dir = "./toml-dumps"
             workers = 16
         "#;
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = ZephyrConfig::from_toml_str(toml_str).unwrap();
 
         // Simulate CLI where host was passed explicitly, but workers, port, and dir were not
-        let cli = Cli::try_parse_from(["mysql-turboload", "-H", "192.168.1.1"]).unwrap();
-        let matches = Cli::command().get_matches_from(["mysql-turboload", "-H", "192.168.1.1"]);
+        let cli = Cli::try_parse_from(["zephyr", "-H", "192.168.1.1"]).unwrap();
+        let matches = Cli::command().get_matches_from(["zephyr", "-H", "192.168.1.1"]);
         let mut import_args = cli.import;
         merge_import_config(&mut import_args, &cfg, &matches);
 
@@ -518,10 +533,10 @@ mod tests {
             dir = "./toml-exports"
             compress = true
         "#;
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = ZephyrConfig::from_toml_str(toml_str).unwrap();
 
-        let cli = Cli::try_parse_from(["mysql-turboload", "export", "-d", "./cli-exports"]).unwrap();
-        let matches = Cli::command().get_matches_from(["mysql-turboload", "export", "-d", "./cli-exports"]);
+        let cli = Cli::try_parse_from(["zephyr", "export", "-d", "./cli-exports"]).unwrap();
+        let matches = Cli::command().get_matches_from(["zephyr", "export", "-d", "./cli-exports"]);
         let sub_matches = matches.subcommand_matches("export").unwrap();
         if let Some(Commands::Export(mut export_args)) = cli.command {
             merge_export_config(&mut export_args, &cfg, sub_matches);
