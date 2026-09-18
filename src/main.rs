@@ -11,7 +11,6 @@ mod scanner;
 mod server_tuning;
 
 use anyhow::Result;
-use clap::Parser;
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::process;
@@ -33,10 +32,33 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    use clap::CommandFactory;
+    use clap::FromArgMatches;
+
+    let matches = Cli::command().get_matches();
+    let mut cli = Cli::from_arg_matches(&matches)?;
+
+    let config = if cli.no_config {
+        None
+    } else {
+        let config_path = config::find_config_file(cli.config.as_deref())?;
+        if let Some(ref path) = config_path {
+            println!(
+                "{}",
+                format!("[CONFIG] Loaded configuration from: {}", path.display()).cyan()
+            );
+            Some(config::load_config(path)?)
+        } else {
+            None
+        }
+    };
 
     match cli.command {
         Some(Commands::Export(mut export_args)) => {
+            if let Some(ref cfg) = config {
+                let sub_matches = matches.subcommand_matches("export").unwrap_or(&matches);
+                config::merge_export_config(&mut export_args, cfg, sub_matches);
+            }
             if export_args.dir == std::path::Path::new("export-dumps")
                 && cli.import.dir != std::path::Path::new(".")
             {
@@ -44,8 +66,19 @@ fn run() -> Result<()> {
             }
             exporter::run_export(export_args)
         }
-        Some(Commands::Import(import_args)) => run_import(import_args),
-        None => run_import(cli.import),
+        Some(Commands::Import(mut import_args)) => {
+            if let Some(ref cfg) = config {
+                let sub_matches = matches.subcommand_matches("import").unwrap_or(&matches);
+                config::merge_import_config(&mut import_args, cfg, sub_matches);
+            }
+            run_import(import_args)
+        }
+        None => {
+            if let Some(ref cfg) = config {
+                config::merge_import_config(&mut cli.import, cfg, &matches);
+            }
+            run_import(cli.import)
+        }
     }
 }
 
