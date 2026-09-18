@@ -85,8 +85,7 @@ Operators can copy `zephyr.example.toml` to `zephyr.toml` in their workspace or 
 | `databases` | String | *(commented)* | Comma-separated list of databases |
 | `all_databases` | Boolean | *(commented: `false`)* | Dump all databases on server |
 | `tables` | String | *(commented)* | Comma-separated table inclusion list |
-| `exclude_tables` | String | *(commented)* | Comma-separated table exclusion list |
-| `manifest` | String/Path | *(commented: `"./export-dumps/logs/manifest.json"`)* | Custom path to export manifest (auto-saved inside `log_dir` by default) |
+| `manifest` | String/Path | *(commented: `"./logs/manifest.json"`)* | Custom path to export manifest (auto-saved inside `log_dir` by default) |
 | `resume` | Boolean | *(commented: `true`)* | Resume interrupted export |
 | `dry_run` | Boolean | *(commented: `false`)* | Dry run simulation |
 | `no_data` | Boolean | *(commented: `false`)* | DDL schema only |
@@ -95,7 +94,7 @@ Operators can copy `zephyr.example.toml` to `zephyr.toml` in their workspace or 
 | `events` | Boolean | *(commented: `true`)* | Export scheduled events |
 | `triggers` | Boolean | *(commented: `true`)* | Export table triggers |
 | `net_buffer_length` | String | *(commented: `"1M"`)* | Network packet buffer size for mysqldump |
-| `log_dir` | String/Path | *(commented: `"./export-dumps/logs"`)* | Directory for export logs (default: `<dir>/logs`) |
+| `log_dir` | String/Path | *(commented: `"./logs"`)* | Directory for export logs (default: `<dir>/logs`) |
 | `no_progress` | Boolean | *(commented: `false`)* | Suppress interactive progress bar |
 
 ---
