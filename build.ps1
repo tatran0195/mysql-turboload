@@ -1,8 +1,8 @@
-# PowerShell build script for MySQL TurboLoad
+# PowerShell build script for Zephyr
 $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host " Building MySQL TurboLoad Enterprise (Release)" -ForegroundColor Cyan
+Write-Host " Building Zephyr (Release)" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
 cargo build --release
@@ -15,8 +15,8 @@ if (-not (Test-Path "bin")) {
     New-Item -ItemType Directory -Path "bin" | Out-Null
 }
 
-$source = "target\release\mysql-turboload.exe"
-$dest = "bin\mysql-turboload.exe"
+$source = "target\release\zephyr.exe"
+$dest = "bin\zephyr.exe"
 
 if (Test-Path $source) {
     Copy-Item -Path $source -Destination $dest -Force

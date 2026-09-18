@@ -64,7 +64,7 @@ exit 0
     fs::set_permissions(&mock_mysql, perms).unwrap();
 
     // 3. Locate compiled binary
-    let bin_path = env!("CARGO_BIN_EXE_mysql-turboload");
+    let bin_path = env!("CARGO_BIN_EXE_zephyr");
 
     // 4. Run first import
     let output = Command::new(bin_path)
@@ -203,7 +203,7 @@ exit 0
     perms2.set_mode(0o755);
     fs::set_permissions(&mock_mysqldump, perms2).unwrap();
 
-    let bin_path = env!("CARGO_BIN_EXE_mysql-turboload");
+    let bin_path = env!("CARGO_BIN_EXE_zephyr");
 
     // 3. Run parallel export
     let export_output = Command::new(bin_path)
@@ -253,7 +253,7 @@ exit 0
     assert!(invoice_content.contains("-- Current Database: `crm_db`"));
     assert!(invoice_content.contains("CREATE TABLE `invoices`"));
 
-    // 5. Test Roundtrip: Point mysql-turboload import at the exported folder!
+    // 5. Test Roundtrip: Point zephyr import at the exported folder!
     let import_dry_run = Command::new(bin_path)
         .arg("import")
         .arg("--dir")
@@ -314,7 +314,7 @@ exit 0
     perms2.set_mode(0o755);
     fs::set_permissions(&mock_mysqldump, perms2).unwrap();
 
-    let bin_path = env!("CARGO_BIN_EXE_mysql-turboload");
+    let bin_path = env!("CARGO_BIN_EXE_zephyr");
 
     // 3. Run parallel export with --dir alias and --compress
     let export_output = Command::new(bin_path)

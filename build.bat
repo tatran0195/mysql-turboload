@@ -1,6 +1,6 @@
 @echo off
 echo ==========================================
-echo  Building MySQL TurboLoad Enterprise (Release)
+echo  Building Zephyr (Release)
 echo ==========================================
 
 cargo build --release
@@ -10,11 +10,11 @@ if %errorlevel% neq 0 (
 )
 
 if not exist bin mkdir bin
-copy /y target\release\mysql-turboload.exe bin\mysql-turboload.exe > nul
+copy /y target\release\zephyr.exe bin\zephyr.exe > nul
 if %errorlevel% neq 0 (
-    echo [ERROR] Failed to copy binary to bin\mysql-turboload.exe
+    echo [ERROR] Failed to copy binary to bin\zephyr.exe
     exit /b %errorlevel%
 )
 
 echo.
-echo [SUCCESS] Release binary successfully updated in bin\mysql-turboload.exe
+echo [SUCCESS] Release binary successfully updated in bin\zephyr.exe
