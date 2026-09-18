@@ -63,8 +63,8 @@ Operators can copy `zephyr.example.toml` to `zephyr.toml` in their workspace or 
 | `database` | String | *(commented)* | Target database override |
 | `default_database` | String | *(commented)* | Fallback database if dump omits `USE` |
 | `no_disable_foreign_keys` | Boolean | *(commented: `false`)* | Keep foreign key checks enabled |
-| `log_dir` | String/Path | `"./import-logs"` | Log directory for worker error outputs |
-| `manifest` | String/Path | *(commented)* | Custom path to import manifest file |
+| `log_dir` | String/Path | *(commented: `"./logs"`)* | Log directory (default: `./logs` or `<dir>/logs`) |
+| `manifest` | String/Path | *(commented: `"./logs/manifest.json"`)* | Custom path to manifest (auto-discovered in `log_dir` if omitted) |
 | `resume` | Boolean | *(commented: `true`)* | Resume ingestion skipping completed files |
 | `retry_file` | String/Path | *(commented)* | Re-run only files listed in failure log |
 | `filter` | String | *(commented: `"*.sql"`)* | File match filter pattern |
@@ -86,7 +86,7 @@ Operators can copy `zephyr.example.toml` to `zephyr.toml` in their workspace or 
 | `all_databases` | Boolean | *(commented: `false`)* | Dump all databases on server |
 | `tables` | String | *(commented)* | Comma-separated table inclusion list |
 | `exclude_tables` | String | *(commented)* | Comma-separated table exclusion list |
-| `manifest` | String/Path | *(commented)* | Custom path to export manifest file |
+| `manifest` | String/Path | *(commented: `"./export-dumps/logs/manifest.json"`)* | Custom path to export manifest (auto-saved inside `log_dir` by default) |
 | `resume` | Boolean | *(commented: `true`)* | Resume interrupted export |
 | `dry_run` | Boolean | *(commented: `false`)* | Dry run simulation |
 | `no_data` | Boolean | *(commented: `false`)* | DDL schema only |
@@ -95,7 +95,7 @@ Operators can copy `zephyr.example.toml` to `zephyr.toml` in their workspace or 
 | `events` | Boolean | *(commented: `true`)* | Export scheduled events |
 | `triggers` | Boolean | *(commented: `true`)* | Export table triggers |
 | `net_buffer_length` | String | *(commented: `"1M"`)* | Network packet buffer size for mysqldump |
-| `log_dir` | String/Path | *(commented)* | Directory for export stderr/logs |
+| `log_dir` | String/Path | *(commented: `"./export-dumps/logs"`)* | Directory for export logs (default: `<dir>/logs`) |
 | `no_progress` | Boolean | *(commented: `false`)* | Suppress interactive progress bar |
 
 ---
