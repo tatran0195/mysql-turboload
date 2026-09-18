@@ -216,8 +216,8 @@ fn run_import(mut cli: ImportArgs) -> Result<()> {
         "{}",
         "==================================================".cyan()
     );
-    println!("{}", " MYSQL TURBOLOAD ENTERPRISE v1.0.0".cyan().bold());
-    println!("{}", " Concurrent Bulk Database Ingestion Engine".cyan());
+    println!("{}", " ZEPHYR v1.0.0".cyan().bold());
+    println!("{}", " High-Performance Concurrent MySQL Data Engine".cyan());
     println!(
         "{}",
         "==================================================".cyan()

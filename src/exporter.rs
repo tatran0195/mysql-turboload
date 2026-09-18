@@ -880,7 +880,7 @@ fn print_export_summary(summary: &RunSummary, log_dir: &Path) {
             "TO RESUME AND FINISH REMAINING TABLES:".yellow().bold()
         );
         println!(
-            "  mysql-turboload export --resume --manifest {}",
+            "  zephyr export --resume --manifest {}",
             retry_manifest.display()
         );
     }

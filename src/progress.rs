@@ -508,7 +508,7 @@ pub fn print_summary(summary: &RunSummary, log_dir: &std::path::Path) {
         let retry_file = log_dir.join("failed_files.txt");
         println!();
         println!("{}", "TO RETRY ONLY FAILED TABLES:".yellow().bold());
-        println!("  mysql-turboload --retry-file {}", retry_file.display());
+        println!("  zephyr --retry-file {}", retry_file.display());
     }
     println!();
 }
