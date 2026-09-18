@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use crate::cli::ImportArgs;
 use crate::manifest::ManifestManager;
+use crate::progress::{CountingReader, WorkerLiveState};
 use crate::scanner::TableTask;
 
 #[derive(Debug, Clone)]
@@ -78,6 +79,7 @@ pub fn execute_tasks<F>(
     option_file: &Path,
     tasks: Vec<TableTask>,
     manifest: Arc<ManifestManager>,
+    live_states: Vec<Arc<WorkerLiveState>>,
     event_callback: F,
 ) -> Result<RunSummary>
 where
@@ -137,12 +139,15 @@ where
         let manifest = Arc::clone(&manifest);
         let cancelled = Arc::clone(&cancelled);
         let active_pids = Arc::clone(&active_pids);
+        let live_state = Arc::clone(&live_states[worker_id - 1]);
 
         let handle = thread::spawn(move || {
             while let Ok(task) = task_rx.recv() {
                 if cancelled.load(Ordering::SeqCst) {
                     break;
                 }
+
+                live_state.start_task(&task.database, &task.file_name, task.size_bytes);
 
                 // Notify UI that task has started
                 let _ = event_tx.send(WorkerEvent::Started {
@@ -154,10 +159,11 @@ where
 
                 let task_start = Instant::now();
 
-                // Open SQL file to stream directly into stdin (zero-copy kernel pipe)
+                // Open SQL file to stream directly into stdin
                 let file = match File::open(&task.file_path) {
                     Ok(f) => f,
                     Err(e) => {
+                        live_state.finish_task();
                         let log_path = cli_clone
                             .log_dir
                             .join(format!("{}__{}.err.log", task.database, task.file_name));
@@ -210,19 +216,14 @@ where
                     .extension()
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("gz"));
 
-                let (stdin_cfg, file_for_gz) = if is_gz {
-                    (Stdio::piped(), Some(file))
-                } else {
-                    (Stdio::from(file), None)
-                };
-
-                cmd.stdin(stdin_cfg);
+                cmd.stdin(Stdio::piped());
                 cmd.stdout(Stdio::null());
                 cmd.stderr(Stdio::piped());
 
                 let mut child = match cmd.spawn() {
                     Ok(c) => c,
                     Err(e) => {
+                        live_state.finish_task();
                         let log_path = cli_clone
                             .log_dir
                             .join(format!("{}__{}.err.log", task.database, task.file_name));
@@ -243,25 +244,63 @@ where
                     }
                 };
 
-                let feeder_handle = if let Some(gz_file) = file_for_gz {
-                    let mut child_stdin = child.stdin.take().unwrap();
-                    Some(thread::spawn(move || -> Result<(), std::io::Error> {
-                        let mut decoder = flate2::read::GzDecoder::new(gz_file);
-                        let mut buf = [0u8; 65536];
+                let mut child_stdin = child.stdin.take().unwrap();
+                let live_counter = Arc::clone(&live_state.bytes_current);
+                let live_committing = Arc::clone(&live_state);
+
+                let feeder_handle = thread::spawn(move || -> Result<(), std::io::Error> {
+                    let buf_reader = std::io::BufReader::with_capacity(256 * 1024, file);
+                    let counting_reader = CountingReader::new(buf_reader, live_counter);
+                    let mut transfer_buf = vec![0u8; 256 * 1024];
+
+                    if is_gz {
+                        let mut decoder = flate2::read::GzDecoder::new(counting_reader);
                         loop {
-                            let n = std::io::Read::read(&mut decoder, &mut buf)?;
-                            if n == 0 {
-                                break;
-                            }
-                            if child_stdin.write_all(&buf[..n]).is_err() {
-                                break;
+                            let n = match std::io::Read::read(&mut decoder, &mut transfer_buf) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(e) => {
+                                    if e.kind() == std::io::ErrorKind::BrokenPipe {
+                                        break;
+                                    }
+                                    return Err(e);
+                                }
+                            };
+                            if let Err(e) = child_stdin.write_all(&transfer_buf[..n]) {
+                                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                                    break;
+                                }
+                                return Err(e);
                             }
                         }
-                        Ok(())
-                    }))
-                } else {
-                    None
-                };
+                    } else {
+                        let mut reader = counting_reader;
+                        loop {
+                            let n = match std::io::Read::read(&mut reader, &mut transfer_buf) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(e) => {
+                                    if e.kind() == std::io::ErrorKind::BrokenPipe {
+                                        break;
+                                    }
+                                    return Err(e);
+                                }
+                            };
+                            if let Err(e) = child_stdin.write_all(&transfer_buf[..n]) {
+                                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                                    break;
+                                }
+                                return Err(e);
+                            }
+                        }
+                    }
+
+                    let _ = child_stdin.flush();
+                    drop(child_stdin);
+
+                    live_committing.mark_committing();
+                    Ok(())
+                });
 
                 // Drain stderr asynchronously in a dedicated reader thread so pipe buffer never deadlocks
                 let stderr_stream = child.stderr.take();
@@ -309,9 +348,9 @@ where
                 }
 
                 let stderr_bytes = err_reader.join().unwrap_or_default();
-                if let Some(h) = feeder_handle {
-                    let _ = h.join();
-                }
+                let _ = feeder_handle.join();
+
+                live_state.finish_task();
 
                 if cancelled.load(Ordering::SeqCst) {
                     break;

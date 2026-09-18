@@ -311,6 +311,7 @@ fn run_import(mut cli: ImportArgs) -> Result<()> {
         option_file.path(),
         tasks,
         manifest,
+        tracker.live_states(),
         move |event, state| {
             tracker_callback.handle_event(event, state);
         },
