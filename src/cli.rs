@@ -13,6 +13,14 @@ use std::path::PathBuf;
                   atomic stateful resume manifests, and high-throughput zero-copy streaming."
 )]
 pub struct Cli {
+    /// Explicit path to a TOML configuration file
+    #[arg(long = "config", value_name = "FILE", global = true)]
+    pub config: Option<PathBuf>,
+
+    /// Bypass loading any TOML configuration file
+    #[arg(long = "no-config", global = true)]
+    pub no_config: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -176,16 +184,14 @@ impl ImportArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct ExportArgs {
-    /// Output directory to store exported .sql files
+    /// Directory to store exported .sql files
     #[arg(
-        short = 'o',
-        short_alias = 'd',
-        long = "output-dir",
-        alias = "dir",
+        short = 'd',
+        long = "dir",
         value_name = "DIR",
         default_value = "export-dumps"
     )]
-    pub output_dir: PathBuf,
+    pub dir: PathBuf,
 
     /// Compress exported dump files with gzip (.sql.gz)
     #[arg(short = 'z', long = "compress")]
@@ -313,12 +319,13 @@ pub struct ExportArgs {
 }
 
 impl ExportArgs {
-    /// Resolves log directory: user-specified, or output_dir/logs.
+    /// Resolves log directory: user-specified, or dir/logs.
     pub fn resolved_log_dir(&self) -> PathBuf {
         self.log_dir
             .clone()
-            .unwrap_or_else(|| self.output_dir.join("logs"))
+            .unwrap_or_else(|| self.dir.join("logs"))
     }
+
     /// Determines effective worker count: user-specified, or min(num_cpus, 8), minimum 1.
     pub fn resolved_workers(&self) -> usize {
         if let Some(w) = self.workers {
@@ -356,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_export_args_default_and_custom_log_dir() {
-        let cli = Cli::try_parse_from(["mysql-turboload", "export", "-o", "./my-dumps"]).unwrap();
+        let cli = Cli::try_parse_from(["mysql-turboload", "export", "-d", "./my-dumps"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli.command {
             assert_eq!(
                 export_args.resolved_log_dir(),
@@ -369,7 +376,7 @@ mod tests {
         let cli2 = Cli::try_parse_from([
             "mysql-turboload",
             "export",
-            "-o",
+            "-d",
             "./my-dumps",
             "--log-dir",
             "./custom-logs",
@@ -386,11 +393,11 @@ mod tests {
     }
 
     #[test]
-    fn test_export_args_dir_aliases() {
+    fn test_export_args_dir_flags() {
         let cli_short =
             Cli::try_parse_from(["mysql-turboload", "export", "-d", "./my-target"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_short.command {
-            assert_eq!(export_args.output_dir, PathBuf::from("./my-target"));
+            assert_eq!(export_args.dir, PathBuf::from("./my-target"));
         } else {
             panic!("Expected export command");
         }
@@ -398,7 +405,7 @@ mod tests {
         let cli_long =
             Cli::try_parse_from(["mysql-turboload", "export", "--dir", "./my-target"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_long.command {
-            assert_eq!(export_args.output_dir, PathBuf::from("./my-target"));
+            assert_eq!(export_args.dir, PathBuf::from("./my-target"));
         } else {
             panic!("Expected export command");
         }
@@ -426,12 +433,12 @@ mod tests {
         let cli = Cli::try_parse_from(["mysql-turboload", "-d", "./root-dumps", "export"]).unwrap();
         assert_eq!(cli.import.dir, PathBuf::from("./root-dumps"));
         if let Some(Commands::Export(mut export_args)) = cli.command {
-            if export_args.output_dir == std::path::Path::new("export-dumps")
+            if export_args.dir == std::path::Path::new("export-dumps")
                 && cli.import.dir != std::path::Path::new(".")
             {
-                export_args.output_dir = cli.import.dir;
+                export_args.dir = cli.import.dir;
             }
-            assert_eq!(export_args.output_dir, PathBuf::from("./root-dumps"));
+            assert_eq!(export_args.dir, PathBuf::from("./root-dumps"));
         } else {
             panic!("Expected export command");
         }

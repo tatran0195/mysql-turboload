@@ -36,10 +36,10 @@ fn run() -> Result<()> {
 
     match cli.command {
         Some(Commands::Export(mut export_args)) => {
-            if export_args.output_dir == std::path::Path::new("export-dumps")
+            if export_args.dir == std::path::Path::new("export-dumps")
                 && cli.import.dir != std::path::Path::new(".")
             {
-                export_args.output_dir = cli.import.dir;
+                export_args.dir = cli.import.dir;
             }
             exporter::run_export(export_args)
         }

@@ -91,7 +91,7 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
 
     let manifest = Arc::new(ManifestManager::new(
         &log_dir,
-        &args.output_dir,
+        &args.dir,
         args.manifest.as_deref(),
     ));
 
@@ -192,12 +192,12 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
     println!("Target Server : {}:{}", args.host, args.port);
     println!("MySQL User    : {}", args.user);
     println!("MySQL Dump Bin: {}", mysqldump_bin.display());
-    let dir_note = if !args.output_dir.exists() {
+    let dir_note = if !args.dir.exists() {
         " (will be created)"
     } else {
         ""
     };
-    println!("Output Folder : {}{}", args.output_dir.display(), dir_note);
+    println!("Output Folder : {}{}", args.dir.display(), dir_note);
     println!("Manifest File : {}", manifest.file_path().display());
     println!("Workers       : {}", args.resolved_workers());
     if args.resume && total_scanned_count != tasks.len() {
@@ -251,10 +251,10 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
     }
 
     // Ensure output and log directories exist before starting parallel export
-    fs::create_dir_all(&args.output_dir).with_context(|| {
+    fs::create_dir_all(&args.dir).with_context(|| {
         format!(
             "Failed to create output directory: {}",
-            args.output_dir.display()
+            args.dir.display()
         )
     })?;
     fs::create_dir_all(&log_dir)
@@ -381,7 +381,7 @@ fn collect_export_tasks(
                 format!("{db}__{table}.{ext}")
             };
 
-            let output_path = args.output_dir.join(&file_name);
+            let output_path = args.dir.join(&file_name);
 
             tasks.push(ExportTask {
                 database: db,
