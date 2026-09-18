@@ -43,15 +43,15 @@ zephyr import -d ./backup --resume
 
 ## Why Zephyr? (Architectural Comparison)
 
-| Capability | Traditional Tools (`mysqldump` / Scripts) | Zephyr Engine |
-| :--- | :--- | :--- |
-| **Concurrency** | Single-threaded sequential dump/import; hours on large schemas. | **Parallel Multi-Worker Pipeline**. 4–16 native OS worker threads sorted by Longest Processing Time (LPT). |
-| **Gzip Compression** | Spools raw files to disk or pipes external processes (2x disk overhead). | **Zero-Spool In-Memory Gzip (`--compress` / `-z`)**. Streams direct to `.sql.gz` with zero disk temp files. Transparent decompression on import. |
-| **Worker Scheduling** | Static modulo partition (`task[i % workers]`); idle workers starve. | **Dynamic MPMC Work Stealing** (`crossbeam-channel`). Central shared queue eliminates worker starvation. |
-| **Resource Footprint** | Heavy interpreter processes (PowerShell / Python / Node) taking 150–300 MB/worker. | **Native Compiled Binary**. Sub-millisecond thread startup, < 15 MB total RAM footprint. |
-| **Server Optimization** | Manual or unmanaged; default `innodb_io_capacity=200` throttles writes. | **Automated Server-Side Tuning (`--tune-server`)**. Non-blocking dynamic InnoDB buffer & flushing optimization with RAII restoration. |
-| **Resilience & Resumption** | Binary pass/fail; requires restarting multi-hour jobs from scratch. | **Atomic State Manifest (`--resume`)**. Thread-safe JSON state manifest with atomic `.tmp` swap and `.bak` protection. |
-| **Signal Handling** | `Ctrl+C` leaves orphaned background MySQL child processes and table locks. | **Process Group Termination**. Gracefully drains and terminates child process trees on `SIGINT` / `SIGTERM`. |
+| Capability                  | Traditional Tools (`mysqldump` / Scripts)                                          | Zephyr Engine                                                                                                                                    |
+| :-------------------------- | :--------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Concurrency**             | Single-threaded sequential dump/import; hours on large schemas.                    | **Parallel Multi-Worker Pipeline**. 4–16 native OS worker threads sorted by Longest Processing Time (LPT).                                       |
+| **Gzip Compression**        | Spools raw files to disk or pipes external processes (2x disk overhead).           | **Zero-Spool In-Memory Gzip (`--compress` / `-z`)**. Streams direct to `.sql.gz` with zero disk temp files. Transparent decompression on import. |
+| **Worker Scheduling**       | Static modulo partition (`task[i % workers]`); idle workers starve.                | **Dynamic MPMC Work Stealing** (`crossbeam-channel`). Central shared queue eliminates worker starvation.                                         |
+| **Resource Footprint**      | Heavy interpreter processes (PowerShell / Python / Node) taking 150–300 MB/worker. | **Native Compiled Binary**. Sub-millisecond thread startup, < 15 MB total RAM footprint.                                                         |
+| **Server Optimization**     | Manual or unmanaged; default `innodb_io_capacity=200` throttles writes.            | **Automated Server-Side Tuning (`--tune-server`)**. Non-blocking dynamic InnoDB buffer & flushing optimization with RAII restoration.            |
+| **Resilience & Resumption** | Binary pass/fail; requires restarting multi-hour jobs from scratch.                | **Atomic State Manifest (`--resume`)**. Thread-safe JSON state manifest with atomic `.tmp` swap and `.bak` protection.                           |
+| **Signal Handling**         | `Ctrl+C` leaves orphaned background MySQL child processes and table locks.         | **Process Group Termination**. Gracefully drains and terminates child process trees on `SIGINT` / `SIGTERM`.                                     |
 
 ---
 
@@ -93,10 +93,12 @@ zephyr import -d ./backup --resume
 ## Installation & Building
 
 ### Prerequisites
+
 - [Rust toolchain](https://rustup.rs/) (1.75 or later)
 - Standard MySQL or MariaDB client utilities (`mysql`, `mysqldump`) installed on the host system or system PATH.
 
 ### Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/enterprise/zephyr.git
@@ -107,10 +109,12 @@ cargo build --release
 ```
 
 The release profile compiles with maximum optimizations (`opt-level = 3`, `lto = "fat"`, `codegen-units = 1`, stripped symbols), producing a single self-contained ~3 MB binary:
+
 - **Linux / macOS**: `target/release/zephyr`
 - **Windows**: `target/release/zephyr.exe` (or use `./build.ps1` to place into `bin/zephyr.exe`)
 
 To install into your user cargo binary PATH:
+
 ```bash
 cargo install --path .
 ```
@@ -122,24 +126,31 @@ cargo install --path .
 Extract MySQL database tables in parallel with high-throughput streaming and optional Gzip compression.
 
 ### 1. Basic Parallel Export
+
 Extract a database into Workbench-compatible `.sql` files across 8 parallel workers:
+
 ```bash
 zephyr export --database production_db -d ./backup -w 8 -u root -p
 ```
 
 ### 2. Export with Streaming Gzip Compression (`--compress` / `-z`)
+
 Streams output directly into compressed `.sql.gz` archives in memory with zero intermediate disk files:
+
 ```bash
 zephyr export --database production_db -d ./backup --compress -u root -p
 ```
 
 ### 3. Export All Non-System Databases
+
 Concurrently exports every database into organized target directories:
+
 ```bash
 zephyr export --all-databases -d ./full_backup --compress -w 8 -u root -p
 ```
 
 ### 4. Selective Table Extraction / Exclusions
+
 ```bash
 # Export only critical tables:
 zephyr export --database production_db -d ./core_backup --tables "users,orders,payments"
@@ -149,6 +160,7 @@ zephyr export --database production_db -d ./clean_backup --exclude-tables "audit
 ```
 
 ### 5. Structure-Only or Data-Only Dumps
+
 ```bash
 # Schema DDL structure only (no row data):
 zephyr export --database production_db -d ./schema_only --no-data
@@ -158,6 +170,7 @@ zephyr export --database production_db -d ./data_only --no-create-info --compres
 ```
 
 ### 6. Dry-Run & Resume
+
 ```bash
 # Inspect table sizes and plan without exporting:
 zephyr export --database production_db -d ./backup --dry-run
@@ -173,7 +186,9 @@ zephyr export --database production_db -d ./backup --resume --compress
 Restore Workbench-compatible dump directories and `.sql.gz` archives at maximum wire speed.
 
 ### 1. High-Speed Bulk Restoration with Engine Tuning (`--tune-server`)
+
 Temporarily adjusts InnoDB parameters to maximize disk throughput and memory buffering, restoring original settings safely on completion:
+
 ```bash
 zephyr import -d ./backup --tune-server --buffer-pool-size 4G --io-capacity 2500 -w 8 -u root -p
 ```
@@ -182,24 +197,31 @@ zephyr import -d ./backup --tune-server --buffer-pool-size 4G --io-capacity 2500
 > **Transparent Decompression**: `.sql.gz` files are automatically decompressed in memory and streamed into MySQL stdin. No external archiving tools are required.
 
 ### 2. Default Command Shorthand
+
 Running `zephyr -d <DIR>` without a subcommand automatically defaults to `import`:
+
 ```bash
 zephyr -d ./backup -u root -p
 ```
 
 ### 3. Resuming Interrupted Imports
+
 If an import job is interrupted, rerun with `--resume` to skip already-imported tables in milliseconds:
+
 ```bash
 zephyr import -d ./backup --resume --tune-server
 ```
 
 ### 4. Retrying Failed Tables
+
 If specific tables failed due to external locks or syntax issues, execute only the failed items:
+
 ```bash
 zephyr import -d ./backup --retry-file "logs/failed_files.txt"
 ```
 
 ### 5. Dry-Run & Filtered Restoration
+
 ```bash
 # Validate headers and display execution schedule without importing:
 zephyr import -d ./backup --dry-run
@@ -215,15 +237,17 @@ zephyr import -d ./backup --filter "order"
 Zephyr supports persistent configuration via TOML, removing the need to specify repetitive connection flags on every CLI invocation.
 
 ### Auto-Discovery Order
+
 When `--config` is not explicitly passed, Zephyr automatically checks:
-1. `./zephyr.toml` *(Current Working Directory - Primary)*
-2. `./mysql-zephyr.toml` *(Current Working Directory)*
-3. `./turboload.toml` & `./mysql-turboload.toml` *(Backwards-compatibility fallbacks)*
-4. User global config directory:
-   * **Windows**: `%APPDATA%\zephyr\config.toml` (fallback: `%APPDATA%\mysql-turboload\config.toml`)
-   * **Linux / macOS**: `~/.config/zephyr/config.toml` (fallback: `~/.config/mysql-turboload/config.toml`)
+
+1. `./zephyr.toml` _(Current Working Directory - Primary)_
+2. `./mysql-zephyr.toml` _(Current Working Directory)_
+3. User global config directory:
+    - **Windows**: `%APPDATA%\zephyr\config.toml`
+    - **Linux / macOS**: `~/.config/zephyr/config.toml`
 
 ### Precedence Hierarchy
+
 1. **Explicit CLI Flags** (`-H`, `-w`, `-d`, etc.)
 2. **Environment Variables** (`MYSQL_PWD`)
 3. **TOML Configuration File**
@@ -270,64 +294,68 @@ resume = true
 ## CLI Reference
 
 ### Global Options
-| Option | Short | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `--config <FILE>` | | Explicit path to a TOML configuration file | Auto-discovered |
-| `--no-config` | | Bypass loading any TOML configuration file | `false` |
-| `--help` | `-h` | Print help information | |
-| `--version` | `-V` | Print version | |
+
+| Option            | Short | Description                                | Default         |
+| :---------------- | :---- | :----------------------------------------- | :-------------- |
+| `--config <FILE>` |       | Explicit path to a TOML configuration file | Auto-discovered |
+| `--no-config`     |       | Bypass loading any TOML configuration file | `false`         |
+| `--help`          | `-h`  | Print help information                     |                 |
+| `--version`       | `-V`  | Print version                              |                 |
 
 ### Connection Options (Shared)
-| Option | Short | Environment | Description | Default |
-| :--- | :--- | :--- | :--- | :--- |
-| `--host <HOST>` | `-H` | | MySQL server host | `127.0.0.1` |
-| `--port <PORT>` | `-P` | | MySQL server port | `3306` |
-| `--user <USER>` | `-u` | | MySQL username | `root` |
-| `--password <PWD>` | `-p` | `MYSQL_PWD` | MySQL password | Interactive prompt |
-| `--ask-password` | `-W` | | Always prompt interactively for password | `false` |
-| `--mysql-bin <PATH>`| | | Path to `mysql` binary | Auto-detected |
-| `--charset <CHAR>` | | | Client connection charset | `utf8mb4` |
-| `--max-allowed-packet`| | | Maximum network packet size | `1G` |
+
+| Option                 | Short | Environment | Description                              | Default            |
+| :--------------------- | :---- | :---------- | :--------------------------------------- | :----------------- |
+| `--host <HOST>`        | `-H`  |             | MySQL server host                        | `127.0.0.1`        |
+| `--port <PORT>`        | `-P`  |             | MySQL server port                        | `3306`             |
+| `--user <USER>`        | `-u`  |             | MySQL username                           | `root`             |
+| `--password <PWD>`     | `-p`  | `MYSQL_PWD` | MySQL password                           | Interactive prompt |
+| `--ask-password`       | `-W`  |             | Always prompt interactively for password | `false`            |
+| `--mysql-bin <PATH>`   |       |             | Path to `mysql` binary                   | Auto-detected      |
+| `--charset <CHAR>`     |       |             | Client connection charset                | `utf8mb4`          |
+| `--max-allowed-packet` |       |             | Maximum network packet size              | `1G`               |
 
 ### Import Command Options (`zephyr import` or root)
-| Option | Short | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `--dir <DIR>` | `-d` | Source directory containing dump files | `.` |
-| `--workers <COUNT>` | `-w` | Concurrent worker thread count | `min(CPUs, 8)` |
-| `--database <NAME>` | | Target database name (overrides SQL headers) | Detected from SQL |
-| `--default-database <NAME>` | | Fallback database if header detection fails | None |
-| `--tune-server` | | Auto-tune InnoDB server variables during import | `false` |
-| `--buffer-pool-size <SIZE>`| | Target InnoDB buffer pool size for tuning | `4G` |
-| `--io-capacity <IOPS>` | | Target InnoDB I/O capacity (IOPS) | `2500` |
-| `--resume` | | Resume interrupted import skipping finished tables | `false` |
-| `--retry-file <FILE>` | | Import only files listed in failure log | None |
-| `--dry-run` | | Display scan and plan without importing | `false` |
-| `--filter <PATTERN>` | | Filter dump files by substring/pattern | None |
-| `--log-dir <DIR>` | | Directory for error logs and diagnostics | `logs` |
-| `--manifest <PATH>` | | Explicit path to `manifest.json` | Auto-detected |
-| `--no-progress` | | Disable dynamic animation (plain text output) | `false` |
+
+| Option                      | Short | Description                                        | Default           |
+| :-------------------------- | :---- | :------------------------------------------------- | :---------------- |
+| `--dir <DIR>`               | `-d`  | Source directory containing dump files             | `.`               |
+| `--workers <COUNT>`         | `-w`  | Concurrent worker thread count                     | `min(CPUs, 8)`    |
+| `--database <NAME>`         |       | Target database name (overrides SQL headers)       | Detected from SQL |
+| `--default-database <NAME>` |       | Fallback database if header detection fails        | None              |
+| `--tune-server`             |       | Auto-tune InnoDB server variables during import    | `false`           |
+| `--buffer-pool-size <SIZE>` |       | Target InnoDB buffer pool size for tuning          | `4G`              |
+| `--io-capacity <IOPS>`      |       | Target InnoDB I/O capacity (IOPS)                  | `2500`            |
+| `--resume`                  |       | Resume interrupted import skipping finished tables | `false`           |
+| `--retry-file <FILE>`       |       | Import only files listed in failure log            | None              |
+| `--dry-run`                 |       | Display scan and plan without importing            | `false`           |
+| `--filter <PATTERN>`        |       | Filter dump files by substring/pattern             | None              |
+| `--log-dir <DIR>`           |       | Directory for error logs and diagnostics           | `logs`            |
+| `--manifest <PATH>`         |       | Explicit path to `manifest.json`                   | Auto-detected     |
+| `--no-progress`             |       | Disable dynamic animation (plain text output)      | `false`           |
 
 ### Export Command Options (`zephyr export`)
-| Option | Short | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `--dir <DIR>` | `-d` | Destination directory for export files | `export-dumps` |
-| `--compress` | `-z` | Stream Gzip compression (`.sql.gz`) | `false` |
-| `--database <NAME>` | `-B` | Target single database to export | None |
-| `--databases <NAMES>`| | Comma-separated list of databases to export | None |
-| `--all-databases` | | Export all non-system databases | `false` |
-| `--tables <NAMES>` | | Comma-separated list of tables to include | All tables |
-| `--exclude-tables <NAMES>`| | Comma-separated list of tables to exclude | None |
-| `--workers <COUNT>` | `-w` | Concurrent worker thread count | `min(CPUs, 8)` |
-| `--mysqldump-bin <PATH>`| | Path to `mysqldump` binary | Auto-detected |
-| `--no-data` | | Export table structure only (no rows) | `false` |
-| `--no-create-info` | | Export table rows only (no DDL) | `false` |
-| `--routines` | | Include stored procedures and functions | `true` |
-| `--events` | | Include events | `true` |
-| `--triggers` | | Include triggers | `true` |
-| `--net-buffer-length` | | Network buffer length | `1M` |
-| `--resume` | | Resume interrupted export job | `false` |
-| `--dry-run` | | Estimate sizes and schemas without dumping | `false` |
-| `--log-dir <DIR>` | | Directory for logs and manifest | `<dir>/logs` |
+
+| Option                     | Short | Description                                 | Default        |
+| :------------------------- | :---- | :------------------------------------------ | :------------- |
+| `--dir <DIR>`              | `-d`  | Destination directory for export files      | `export-dumps` |
+| `--compress`               | `-z`  | Stream Gzip compression (`.sql.gz`)         | `false`        |
+| `--database <NAME>`        | `-B`  | Target single database to export            | None           |
+| `--databases <NAMES>`      |       | Comma-separated list of databases to export | None           |
+| `--all-databases`          |       | Export all non-system databases             | `false`        |
+| `--tables <NAMES>`         |       | Comma-separated list of tables to include   | All tables     |
+| `--exclude-tables <NAMES>` |       | Comma-separated list of tables to exclude   | None           |
+| `--workers <COUNT>`        | `-w`  | Concurrent worker thread count              | `min(CPUs, 8)` |
+| `--mysqldump-bin <PATH>`   |       | Path to `mysqldump` binary                  | Auto-detected  |
+| `--no-data`                |       | Export table structure only (no rows)       | `false`        |
+| `--no-create-info`         |       | Export table rows only (no DDL)             | `false`        |
+| `--routines`               |       | Include stored procedures and functions     | `true`         |
+| `--events`                 |       | Include events                              | `true`         |
+| `--triggers`               |       | Include triggers                            | `true`         |
+| `--net-buffer-length`      |       | Network buffer length                       | `1M`           |
+| `--resume`                 |       | Resume interrupted export job               | `false`        |
+| `--dry-run`                |       | Estimate sizes and schemas without dumping  | `false`        |
+| `--log-dir <DIR>`          |       | Directory for logs and manifest             | `<dir>/logs`   |
 
 ---
 

@@ -91,8 +91,6 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     let candidates = [
         PathBuf::from("zephyr.toml"),
         PathBuf::from("mysql-zephyr.toml"),
-        PathBuf::from("turboload.toml"),
-        PathBuf::from("mysql-turboload.toml"),
     ];
     for c in &candidates {
         if c.is_file() {
@@ -101,17 +99,9 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     }
 
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        let zephyr_p = PathBuf::from(&appdata)
-            .join("zephyr")
-            .join("config.toml");
+        let zephyr_p = PathBuf::from(&appdata).join("zephyr").join("config.toml");
         if zephyr_p.is_file() {
             return Ok(Some(zephyr_p));
-        }
-        let legacy_p = PathBuf::from(appdata)
-            .join("mysql-turboload")
-            .join("config.toml");
-        if legacy_p.is_file() {
-            return Ok(Some(legacy_p));
         }
     } else if let Some(home) = std::env::var_os("HOME") {
         let zephyr_p = PathBuf::from(&home)
@@ -120,13 +110,6 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
             .join("config.toml");
         if zephyr_p.is_file() {
             return Ok(Some(zephyr_p));
-        }
-        let legacy_p = PathBuf::from(home)
-            .join(".config")
-            .join("mysql-turboload")
-            .join("config.toml");
-        if legacy_p.is_file() {
-            return Ok(Some(legacy_p));
         }
     }
 
@@ -152,11 +135,7 @@ fn is_cli_or_env_provided(matches: &clap::ArgMatches, id: &str) -> bool {
 
 /// Merges configuration settings into ImportArgs.
 /// Settings explicitly passed on the CLI or via env take precedence over TOML settings.
-pub fn merge_import_config(
-    args: &mut ImportArgs,
-    cfg: &ZephyrConfig,
-    matches: &clap::ArgMatches,
-) {
+pub fn merge_import_config(args: &mut ImportArgs, cfg: &ZephyrConfig, matches: &clap::ArgMatches) {
     // Connection settings
     if !is_cli_provided(matches, "host") {
         if let Some(ref val) = cfg.connection.host {
@@ -279,11 +258,7 @@ pub fn merge_import_config(
 
 /// Merges configuration settings into ExportArgs.
 /// Settings explicitly passed on the CLI or via env take precedence over TOML settings.
-pub fn merge_export_config(
-    args: &mut ExportArgs,
-    cfg: &ZephyrConfig,
-    matches: &clap::ArgMatches,
-) {
+pub fn merge_export_config(args: &mut ExportArgs, cfg: &ZephyrConfig, matches: &clap::ArgMatches) {
     // Connection settings
     if !is_cli_provided(matches, "host") {
         if let Some(ref val) = cfg.connection.host {
@@ -518,8 +493,8 @@ mod tests {
         merge_import_config(&mut import_args, &cfg, &matches);
 
         assert_eq!(import_args.host, "192.168.1.1"); // CLI overrides TOML
-        assert_eq!(import_args.port, 3307);          // TOML overrides default 3306
-        assert_eq!(import_args.workers, Some(16));   // TOML overrides default None
+        assert_eq!(import_args.port, 3307); // TOML overrides default 3306
+        assert_eq!(import_args.workers, Some(16)); // TOML overrides default None
         assert_eq!(import_args.dir, PathBuf::from("./toml-dumps")); // TOML overrides default "."
     }
 
@@ -541,8 +516,8 @@ mod tests {
         if let Some(Commands::Export(mut export_args)) = cli.command {
             merge_export_config(&mut export_args, &cfg, sub_matches);
             assert_eq!(export_args.dir, PathBuf::from("./cli-exports")); // CLI overrides TOML
-            assert_eq!(export_args.host, "10.0.0.2");                  // TOML overrides default 127.0.0.1
-            assert!(export_args.compress);                              // TOML overrides default false
+            assert_eq!(export_args.host, "10.0.0.2"); // TOML overrides default 127.0.0.1
+            assert!(export_args.compress); // TOML overrides default false
         } else {
             panic!("Expected export command");
         }

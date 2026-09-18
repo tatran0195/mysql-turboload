@@ -2,40 +2,44 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement persistent TOML configuration file support (`turboload.toml`) with automated candidate discovery, CLI flag precedence, strict schema validation, and unified `--dir` option for import and export.
+**Goal:** Implement persistent TOML configuration file support (`zephyr.toml`) with automated candidate discovery, CLI flag precedence, strict schema validation, and unified `--dir` option for import and export.
 
-**Architecture:** A new strongly-typed `src/config.rs` module deserializes TOML configs via `toml` (v0.8) and `serde`. Configuration auto-discovery searches `./turboload.toml`, `./mysql-turboload.toml`, and platform `%APPDATA%` / `~/.config` dirs. A merge layer applies config values to `ImportArgs` and `ExportArgs` where CLI flags were not explicitly passed, respecting CLI > Env > TOML > Defaults. `ExportArgs` is unified with `ImportArgs` to use canonical `--dir` / `-d`.
+**Architecture:** A new strongly-typed `src/config.rs` module deserializes TOML configs via `toml` (v0.8) and `serde`. Configuration auto-discovery searches `./zephyr.toml`, `./zephyr.toml`, and platform `%APPDATA%` / `~/.config` dirs. A merge layer applies config values to `ImportArgs` and `ExportArgs` where CLI flags were not explicitly passed, respecting CLI > Env > TOML > Defaults. `ExportArgs` is unified with `ImportArgs` to use canonical `--dir` / `-d`.
 
 **Tech Stack:** Rust 2021 edition, `clap` 4.5 (derive & value_source), `serde` 1.0 (derive), `toml` 0.8, `colored` 2.1, `anyhow` 1.0.
 
 ## Global Constraints
+
 - Unified directory option: both import and export must use `-d, --dir <DIR>` (remove legacy `-o, --output-dir`).
 - Precedence order: CLI Arguments > Environment Variables > TOML File > Built-in Defaults.
-- Auto-discovery order: `./turboload.toml`, `./mysql-turboload.toml`, `%APPDATA%\mysql-turboload\config.toml` (or `~/.config/mysql-turboload/config.toml`).
+- Auto-discovery order: `./zephyr.toml`, `./zephyr.toml`, `%APPDATA%\zephyr\config.toml` (or `~/.config/zephyr/config.toml`).
 - Schema validation: `#[serde(deny_unknown_fields)]` to prevent silent misconfigurations.
 - CLI flags: `--config <PATH>` (explicit path) and `--no-config` (bypass all config loading).
-- All tests must pass: `cargo test --bin mysql-turboload`.
+- All tests must pass: `cargo test --bin zephyr`.
 
 ---
 
 ### Task 1: Add `toml` Dependency, Unify `--dir` Flag, and Add Config Flags in `cli.rs`
 
 **Files:**
+
 - Modify: `Cargo.toml:23-29`
 - Modify: `src/cli.rs:15-30,178-220,315-345,350-440`
 - Modify: `src/main.rs:37-45`
 - Modify: `src/exporter.rs:35-50,150-170`
 
 **Interfaces:**
+
 - Consumes: `clap::Parser`, `clap::Args`
 - Produces:
-  - `Cli::config: Option<PathBuf>`
-  - `Cli::no_config: bool`
-  - `ExportArgs::dir: PathBuf` (replaces `output_dir`)
+    - `Cli::config: Option<PathBuf>`
+    - `Cli::no_config: bool`
+    - `ExportArgs::dir: PathBuf` (replaces `output_dir`)
 
 - [ ] **Step 1: Update `Cargo.toml` with `toml` dependency**
 
 In `Cargo.toml` under `[dependencies]`:
+
 ```toml
 toml = "0.8"
 ```
@@ -43,7 +47,9 @@ toml = "0.8"
 - [ ] **Step 2: Update `src/cli.rs` with `--config`, `--no-config`, and unified `ExportArgs.dir`**
 
 In `src/cli.rs`:
+
 1. In `Cli`:
+
 ```rust
 pub struct Cli {
     /// Explicit path to a TOML configuration file
@@ -61,7 +67,9 @@ pub struct Cli {
     pub import: ImportArgs,
 }
 ```
+
 2. In `ExportArgs`:
+
 ```rust
     /// Output directory to store exported .sql files
     #[arg(
@@ -72,7 +80,9 @@ pub struct Cli {
     )]
     pub dir: PathBuf,
 ```
+
 Remove `-o` and `--output-dir`. Update `resolved_log_dir()`:
+
 ```rust
     pub fn resolved_log_dir(&self) -> PathBuf {
         self.log_dir
@@ -80,11 +90,13 @@ Remove `-o` and `--output-dir`. Update `resolved_log_dir()`:
             .unwrap_or_else(|| self.dir.join("logs"))
     }
 ```
+
 3. Update tests in `src/cli.rs` to test `-d` and `--dir` on export instead of `-o` / `--output-dir`.
 
 - [ ] **Step 3: Update `src/main.rs` and `src/exporter.rs` references from `output_dir` to `dir`**
 
 In `src/main.rs`:
+
 ```rust
         Some(Commands::Export(mut export_args)) => {
             if export_args.dir == std::path::Path::new("export-dumps")
@@ -95,12 +107,13 @@ In `src/main.rs`:
             exporter::run_export(export_args)
         }
 ```
+
 In `src/exporter.rs`:
 Replace `export_args.output_dir` with `export_args.dir`.
 
 - [ ] **Step 4: Run unit tests to verify compilation and unified `--dir` behavior**
 
-Run: `cargo test --bin mysql-turboload`
+Run: `cargo test --bin zephyr`
 Expected: All tests pass (including updated `cli::tests`).
 
 - [ ] **Step 5: Commit changes**
@@ -115,17 +128,19 @@ git commit -m "feat(cli): add --config / --no-config flags and unify export dire
 ### Task 2: Implement TOML Configuration Models & Deserialization in `src/config.rs`
 
 **Files:**
+
 - Create: `src/config.rs`
 - Modify: `src/main.rs:1-12`
 
 **Interfaces:**
+
 - Consumes: `serde::Deserialize`, `toml::from_str`
 - Produces:
-  - `TurboLoadConfig`
-  - `ConnectionConfig`
-  - `ImportConfig`
-  - `ExportConfig`
-  - `TurboLoadConfig::from_toml_str(content: &str) -> Result<TurboLoadConfig, anyhow::Error>`
+    - `zephyrConfig`
+    - `ConnectionConfig`
+    - `ImportConfig`
+    - `ExportConfig`
+    - `zephyrConfig::from_toml_str(content: &str) -> Result<zephyrConfig, anyhow::Error>`
 
 - [ ] **Step 1: Write failing unit tests in `src/config.rs`**
 
@@ -164,7 +179,7 @@ mod tests {
             events = true
             triggers = true
         "#;
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = zephyrConfig::from_toml_str(toml_str).unwrap();
         assert_eq!(cfg.connection.host.as_deref(), Some("192.168.1.100"));
         assert_eq!(cfg.connection.port, Some(3307));
         assert_eq!(cfg.import.dir, Some(PathBuf::from("./test-dumps")));
@@ -176,7 +191,7 @@ mod tests {
     #[test]
     fn test_parse_minimal_empty_toml() {
         let toml_str = "";
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = zephyrConfig::from_toml_str(toml_str).unwrap();
         assert!(cfg.connection.host.is_none());
         assert!(cfg.import.dir.is_none());
         assert!(cfg.export.dir.is_none());
@@ -188,7 +203,7 @@ mod tests {
             [import]
             worker = 8  # typo: should be workers
         "#;
-        let res = TurboLoadConfig::from_toml_str(toml_str);
+        let res = zephyrConfig::from_toml_str(toml_str);
         assert!(res.is_err(), "Expected error on unknown field 'worker'");
     }
 }
@@ -196,12 +211,13 @@ mod tests {
 
 - [ ] **Step 2: Run test to verify failure before implementation**
 
-Run: `cargo test --bin mysql-turboload config::tests`
+Run: `cargo test --bin zephyr config::tests`
 Expected: FAIL (module or functions not found).
 
 - [ ] **Step 3: Implement `src/config.rs` structs and deserializer**
 
 Create `src/config.rs`:
+
 ```rust
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -209,7 +225,7 @@ use std::path::PathBuf;
 
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct TurboLoadConfig {
+pub struct zephyrConfig {
     #[serde(default)]
     pub connection: ConnectionConfig,
     #[serde(default)]
@@ -276,17 +292,18 @@ pub struct ExportConfig {
     pub log_dir: Option<PathBuf>,
 }
 
-impl TurboLoadConfig {
+impl zephyrConfig {
     pub fn from_toml_str(content: &str) -> Result<Self> {
         toml::from_str(content).context("Failed to parse TOML configuration")
     }
 }
 ```
+
 Register `mod config;` in `src/main.rs`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test --bin mysql-turboload config::tests`
+Run: `cargo test --bin zephyr config::tests`
 Expected: PASS with 3 tests passing.
 
 - [ ] **Step 5: Commit changes**
@@ -301,16 +318,18 @@ git commit -m "feat(config): implement strongly-typed TOML deserialization with 
 ### Task 3: Implement Config File Discovery, Precedence Merging & Banner Notification
 
 **Files:**
+
 - Modify: `src/config.rs`
 - Modify: `src/main.rs:25-50`
 
 **Interfaces:**
+
 - Consumes: `clap::Command::try_get_matches_from`, `clap::parser::ValueSource`, `std::env`
 - Produces:
-  - `find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>>`
-  - `load_config(path: &Path) -> Result<TurboLoadConfig>`
-  - `merge_import_config(args: &mut ImportArgs, cfg: &TurboLoadConfig, matches: &clap::ArgMatches)`
-  - `merge_export_config(args: &mut ExportArgs, cfg: &TurboLoadConfig, matches: &clap::ArgMatches)`
+    - `find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>>`
+    - `load_config(path: &Path) -> Result<zephyrConfig>`
+    - `merge_import_config(args: &mut ImportArgs, cfg: &zephyrConfig, matches: &clap::ArgMatches)`
+    - `merge_export_config(args: &mut ExportArgs, cfg: &zephyrConfig, matches: &clap::ArgMatches)`
 
 - [ ] **Step 1: Write failing tests for file discovery and merging logic in `src/config.rs`**
 
@@ -326,11 +345,11 @@ git commit -m "feat(config): implement strongly-typed TOML deserialization with 
             dir = "./toml-dumps"
             workers = 16
         "#;
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = zephyrConfig::from_toml_str(toml_str).unwrap();
 
         // Simulate CLI where host was passed explicitly, but workers and dir were not
-        let cli = Cli::try_parse_from(["mysql-turboload", "-H", "192.168.1.1"]).unwrap();
-        let matches = Cli::command().get_matches_from(["mysql-turboload", "-H", "192.168.1.1"]);
+        let cli = Cli::try_parse_from(["zephyr", "-H", "192.168.1.1"]).unwrap();
+        let matches = Cli::command().get_matches_from(["zephyr", "-H", "192.168.1.1"]);
         let mut import_args = cli.import;
         merge_import_config(&mut import_args, &cfg, &matches);
 
@@ -350,10 +369,10 @@ git commit -m "feat(config): implement strongly-typed TOML deserialization with 
             dir = "./toml-exports"
             compress = true
         "#;
-        let cfg = TurboLoadConfig::from_toml_str(toml_str).unwrap();
+        let cfg = zephyrConfig::from_toml_str(toml_str).unwrap();
 
-        let cli = Cli::try_parse_from(["mysql-turboload", "export", "-d", "./cli-exports"]).unwrap();
-        let matches = Cli::command().get_matches_from(["mysql-turboload", "export", "-d", "./cli-exports"]);
+        let cli = Cli::try_parse_from(["zephyr", "export", "-d", "./cli-exports"]).unwrap();
+        let matches = Cli::command().get_matches_from(["zephyr", "export", "-d", "./cli-exports"]);
         let sub_matches = matches.subcommand_matches("export").unwrap();
         if let Some(Commands::Export(mut export_args)) = cli.command {
             merge_export_config(&mut export_args, &cfg, sub_matches);
@@ -368,12 +387,13 @@ git commit -m "feat(config): implement strongly-typed TOML deserialization with 
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `cargo test --bin mysql-turboload config::tests`
+Run: `cargo test --bin zephyr config::tests`
 Expected: FAIL (functions not yet defined).
 
 - [ ] **Step 3: Implement discovery, loading, and merging functions in `src/config.rs`**
 
 Add candidate path resolution:
+
 ```rust
 pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     if let Some(p) = explicit {
@@ -384,8 +404,8 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     }
 
     let candidates = [
-        PathBuf::from("turboload.toml"),
-        PathBuf::from("mysql-turboload.toml"),
+        PathBuf::from("zephyr.toml"),
+        PathBuf::from("zephyr.toml"),
     ];
     for c in &candidates {
         if c.is_file() {
@@ -394,12 +414,12 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     }
 
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        let p = PathBuf::from(appdata).join("mysql-turboload").join("config.toml");
+        let p = PathBuf::from(appdata).join("zephyr").join("config.toml");
         if p.is_file() {
             return Ok(Some(p));
         }
     } else if let Some(home) = std::env::var_os("HOME") {
-        let p = PathBuf::from(home).join(".config").join("mysql-turboload").join("config.toml");
+        let p = PathBuf::from(home).join(".config").join("zephyr").join("config.toml");
         if p.is_file() {
             return Ok(Some(p));
         }
@@ -408,22 +428,24 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-pub fn load_config(path: &Path) -> Result<TurboLoadConfig> {
+pub fn load_config(path: &Path) -> Result<zephyrConfig> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read configuration file '{}'", path.display()))?;
-    TurboLoadConfig::from_toml_str(&content)
+    zephyrConfig::from_toml_str(&content)
         .with_context(|| format!("In configuration file '{}'", path.display()))
 }
 ```
 
 Implement `merge_import_config` and `merge_export_config` inspecting `matches.value_source(id) == Some(clap::parser::ValueSource::CommandLine)`.
 If not from CommandLine:
+
 - For `host`, `port`, `user`, `password`, `mysql_bin`, `charset`, `max_allowed_packet`: copy from `cfg.connection` if present, then from `cfg.import` if present.
 - For command-specific fields: copy from `cfg.import` / `cfg.export`.
 
 - [ ] **Step 4: Integrate config loading into `src/main.rs`**
 
 In `main.rs::run()`:
+
 ```rust
     let cli = Cli::parse();
 
@@ -440,11 +462,12 @@ In `main.rs::run()`:
         }
     };
 ```
+
 Merge config into `import_args` or `export_args` before invoking `run_import` or `exporter::run_export`.
 
 - [ ] **Step 5: Run tests to verify discovery, precedence, and merging**
 
-Run: `cargo test --bin mysql-turboload`
+Run: `cargo test --bin zephyr`
 Expected: PASS (all unit tests pass).
 
 - [ ] **Step 6: Commit changes**
@@ -459,23 +482,26 @@ git commit -m "feat(config): integrate config discovery, CLI precedence merging,
 ### Task 4: Documentation Updates & End-to-End Verification
 
 **Files:**
+
 - Modify: `README.md`
 - Create / Test: temporary scratch TOML file for verification
 
 - [ ] **Step 1: Update `README.md`**
 
 Add documentation for:
+
 1. Unified `-d, --dir` option for both import and export commands.
-2. The `turboload.toml` configuration file format with sample `[connection]`, `[import]`, and `[export]` blocks.
+2. The `zephyr.toml` configuration file format with sample `[connection]`, `[import]`, and `[export]` blocks.
 3. Discovery paths and precedence rules (CLI > Env > TOML > Defaults).
 4. `--config <FILE>` and `--no-config` flag reference.
 
-- [ ] **Step 2: Run dry-run verification with a sample `turboload.toml`**
+- [ ] **Step 2: Run dry-run verification with a sample `zephyr.toml`**
 
 Run:
-1. Create temporary `turboload.toml` with `workers = 7`, `port = 3309`.
+
+1. Create temporary `zephyr.toml` with `workers = 7`, `port = 3309`.
 2. Execute: `cargo run -- --dry-run`
-3. Verify output logs `[CONFIG] Loaded configuration from: turboload.toml` and displays `Target Server: 127.0.0.1:3309` and `Workers: 7`.
+3. Verify output logs `[CONFIG] Loaded configuration from: zephyr.toml` and displays `Target Server: 127.0.0.1:3309` and `Workers: 7`.
 4. Execute with CLI override: `cargo run -- --dry-run -P 3310`
 5. Verify `Target Server: 127.0.0.1:3310` (CLI flag overrides TOML).
 6. Execute with bypass: `cargo run -- --dry-run --no-config`
@@ -484,7 +510,7 @@ Run:
 
 - [ ] **Step 3: Run the complete test suite**
 
-Run: `cargo test --bin mysql-turboload`
+Run: `cargo test --bin zephyr`
 Expected: 100% PASS with no warnings.
 
 - [ ] **Step 4: Commit changes**

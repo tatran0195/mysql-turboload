@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebrand the application from `mysql-turboload` to `zephyr` ("Zephyr: High-Performance Concurrent MySQL Data Engine"), updating crate metadata, CLI definitions, configuration discovery, banners, build scripts, tests, and documentation.
+**Goal:** Rebrand the application from `zephyr` to `zephyr` ("Zephyr: High-Performance Concurrent MySQL Data Engine"), updating crate metadata, CLI definitions, configuration discovery, banners, build scripts, tests, and documentation.
 
-**Architecture:** Update Cargo package metadata to emit `zephyr` / `zephyr.exe` binary. Adjust CLI attributes and unit tests in `cli.rs`. Rename configuration structs and update candidate discovery paths in `config.rs` with backwards compatibility for `turboload.toml`. Update runtime headers in `main.rs`, suggestion strings in `exporter.rs`/`progress.rs`, integration tests in `e2e_test.rs`, packaging scripts (`build.bat`, `build.ps1`), and complete `README.md` documentation.
+**Architecture:** Update Cargo package metadata to emit `zephyr` / `zephyr.exe` binary. Adjust CLI attributes and unit tests in `cli.rs`. Rename configuration structs and update candidate discovery paths in `config.rs` with backwards compatibility for `zephyr.toml`. Update runtime headers in `main.rs`, suggestion strings in `exporter.rs`/`progress.rs`, integration tests in `e2e_test.rs`, packaging scripts (`build.bat`, `build.ps1`), and complete `README.md` documentation.
 
 **Tech Stack:** Rust 2021 edition, Clap 4.5, Serde, TOML, PowerShell/Batch build scripts.
 
@@ -13,7 +13,7 @@
 - Crate and binary target name: `zephyr` (executable: `zephyr.exe` on Windows, `zephyr` on Unix)
 - Brand title: `Zephyr: High-Performance Concurrent MySQL Data Engine`
 - Primary config file: `zephyr.toml`
-- Backwards compatibility: Existing `turboload.toml` and `mysql-turboload.toml` files must continue to be discovered as fallbacks if `zephyr.toml` is absent.
+- Backwards compatibility: Existing `zephyr.toml` and `zephyr.toml` files must continue to be discovered as fallbacks if `zephyr.toml` is absent.
 - CLI flags and subcommands (`import`, `export`, `-d`/`--dir`, etc.) must maintain exact flag signatures and behaviors.
 
 ---
@@ -21,15 +21,18 @@
 ### Task 1: Rebrand Cargo Package & Binary Target Metadata
 
 **Files:**
+
 - Modify: `Cargo.toml:1-10`
 
 **Interfaces:**
+
 - Consumes: Existing package configuration
 - Produces: `zephyr` crate and binary target named `zephyr`
 
 - [ ] **Step 1: Update Cargo.toml metadata**
 
 Modify `Cargo.toml` lines 1–10:
+
 ```toml
 [package]
 name = "zephyr"
@@ -59,15 +62,18 @@ git commit -m "build: rebrand cargo package and binary target to zephyr"
 ### Task 2: Rebrand CLI Definitions and Unit Tests
 
 **Files:**
+
 - Modify: `src/cli.rs:4-15, 360-440`
 
 **Interfaces:**
+
 - Consumes: Clap derive macros
 - Produces: `Cli` parser identifying as `zephyr`
 
 - [ ] **Step 1: Update `Cli` struct clap attributes**
 
 Modify `src/cli.rs` lines 4–14:
+
 ```rust
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -85,17 +91,18 @@ pub struct Cli {
 
 - [ ] **Step 2: Update CLI unit tests in `src/cli.rs`**
 
-Replace occurrences of `"mysql-turboload"` with `"zephyr"` in `src/cli.rs` test cases:
-* Line 360: `Cli::try_parse_from(["zephyr"]).unwrap();`
-* Line 366: `Cli::try_parse_from(["zephyr", "export", "-d", "./my-dumps"]).unwrap();`
-* Line 377: `"zephyr",`
-* Line 398: `Cli::try_parse_from(["zephyr", "export", "-d", "./my-target"]).unwrap();`
-* Line 406: `Cli::try_parse_from(["zephyr", "export", "--dir", "./my-target"]).unwrap();`
-* Line 416: `Cli::try_parse_from(["zephyr", "export", "--compress"]).unwrap();`
-* Line 423: `Cli::try_parse_from(["zephyr", "export", "-z"]).unwrap();`
-* Line 433: `Cli::try_parse_from(["zephyr", "-d", "./root-dumps", "export"]).unwrap();`
+Replace occurrences of `"zephyr"` with `"zephyr"` in `src/cli.rs` test cases:
 
-- [ ] **Step 3: Run CLI unit tests**
+- Line 360: `Cli::try_parse_from(["zephyr"]).unwrap();`
+- Line 366: `Cli::try_parse_from(["zephyr", "export", "-d", "./my-dumps"]).unwrap();`
+- Line 377: `"zephyr",`
+- Line 398: `Cli::try_parse_from(["zephyr", "export", "-d", "./my-target"]).unwrap();`
+- Line 406: `Cli::try_parse_from(["zephyr", "export", "--dir", "./my-target"]).unwrap();`
+- Line 416: `Cli::try_parse_from(["zephyr", "export", "--compress"]).unwrap();`
+- Line 423: `Cli::try_parse_from(["zephyr", "export", "-z"]).unwrap();`
+- Line 433: `Cli::try_parse_from(["zephyr", "-d", "./root-dumps", "export"]).unwrap();`
+
+* [ ] **Step 3: Run CLI unit tests**
 
 Run: `cargo test --lib cli::tests`
 Expected: All CLI parsing tests PASS.
@@ -112,16 +119,19 @@ git commit -m "feat(cli): rebrand cli parser name and unit tests to zephyr"
 ### Task 3: Rebrand Configuration Module & Discovery Paths
 
 **Files:**
+
 - Modify: `src/config.rs:1-130, 495-535`
 - Modify: `src/main.rs:50-80`
 
 **Interfaces:**
-- Consumes: `src/config.rs`
-- Produces: `ZephyrConfig` struct with prioritized `zephyr.toml` discovery and `turboload.toml` fallbacks
 
-- [ ] **Step 1: Rename `TurboLoadConfig` to `ZephyrConfig` in `src/config.rs` and `src/main.rs`**
+- Consumes: `src/config.rs`
+- Produces: `ZephyrConfig` struct with prioritized `zephyr.toml` discovery and `zephyr.toml` fallbacks
+
+- [ ] **Step 1: Rename `zephyrConfig` to `ZephyrConfig` in `src/config.rs` and `src/main.rs`**
 
 In `src/config.rs`:
+
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -148,17 +158,19 @@ pub fn load_config(path: &Path) -> Result<ZephyrConfig> {
         .with_context(|| format!("In configuration file '{}'", path.display()))
 }
 ```
+
 Update signature in `merge_import_config(&mut ImportArgs, &ZephyrConfig, ...)` and `merge_export_config(&mut ExportArgs, &ZephyrConfig, ...)`.
 
 - [ ] **Step 2: Update candidate discovery paths in `find_config_file()`**
 
 In `src/config.rs`:
+
 ```rust
     let candidates = [
         PathBuf::from("zephyr.toml"),
         PathBuf::from("mysql-zephyr.toml"),
-        PathBuf::from("turboload.toml"),
-        PathBuf::from("mysql-turboload.toml"),
+        PathBuf::from("zephyr.toml"),
+        PathBuf::from("zephyr.toml"),
     ];
     for c in &candidates {
         if c.is_file() {
@@ -174,7 +186,7 @@ In `src/config.rs`:
             return Ok(Some(zephyr_p));
         }
         let legacy_p = PathBuf::from(appdata)
-            .join("mysql-turboload")
+            .join("zephyr")
             .join("config.toml");
         if legacy_p.is_file() {
             return Ok(Some(legacy_p));
@@ -189,7 +201,7 @@ In `src/config.rs`:
         }
         let legacy_p = PathBuf::from(home)
             .join(".config")
-            .join("mysql-turboload")
+            .join("zephyr")
             .join("config.toml");
         if legacy_p.is_file() {
             return Ok(Some(legacy_p));
@@ -199,7 +211,7 @@ In `src/config.rs`:
 
 - [ ] **Step 3: Update `src/config.rs` unit tests**
 
-Update mock parsing strings and test cases in `src/config.rs` from `"mysql-turboload"` to `"zephyr"`.
+Update mock parsing strings and test cases in `src/config.rs` from `"zephyr"` to `"zephyr"`.
 Add a test verifying `zephyr.toml` discovery.
 
 - [ ] **Step 4: Run configuration unit tests**
@@ -219,17 +231,20 @@ git commit -m "feat(config): rebrand config struct to ZephyrConfig and prioritiz
 ### Task 4: Rebrand Console Banners, Prompts, and Suggestions
 
 **Files:**
+
 - Modify: `src/main.rs:213-224`
 - Modify: `src/exporter.rs:880-888`
 - Modify: `src/progress.rs:508-515`
 
 **Interfaces:**
+
 - Consumes: CLI output formatting
 - Produces: Consistent `zephyr` terminal banners and retry/resume suggestions
 
 - [ ] **Step 1: Update import banner in `src/main.rs`**
 
 Modify lines 213–224:
+
 ```rust
     // Header Banner
     println!();
@@ -248,6 +263,7 @@ Modify lines 213–224:
 - [ ] **Step 2: Update suggestions in `src/exporter.rs` and `src/progress.rs`**
 
 In `src/exporter.rs`:
+
 ```rust
         println!(
             "{}",
@@ -260,6 +276,7 @@ In `src/exporter.rs`:
 ```
 
 In `src/progress.rs`:
+
 ```rust
         println!("  zephyr --retry-file {}", retry_file.display());
 ```
@@ -281,18 +298,20 @@ git commit -m "feat(ui): update console banners and CLI suggestions to Zephyr"
 ### Task 5: Update Integration Tests and Packaging Scripts
 
 **Files:**
+
 - Modify: `tests/e2e_test.rs:67, 206, 256, 317`
 - Modify: `build.ps1:1-31`
 - Modify: `build.bat:1-25`
 
 **Interfaces:**
+
 - Consumes: `cargo build` output
 - Produces: `bin/zephyr.exe` binary and clean E2E test passes
 
 - [ ] **Step 1: Update `tests/e2e_test.rs`**
 
-Replace `env!("CARGO_BIN_EXE_mysql-turboload")` with `env!("CARGO_BIN_EXE_zephyr")` in `tests/e2e_test.rs` (lines 67, 206, 317).
-Update comments referring to `mysql-turboload` to `zephyr`.
+Replace `env!("CARGO_BIN_EXE_zephyr")` with `env!("CARGO_BIN_EXE_zephyr")` in `tests/e2e_test.rs` (lines 67, 206, 317).
+Update comments referring to `zephyr` to `zephyr`.
 
 - [ ] **Step 2: Run E2E tests**
 
@@ -302,6 +321,7 @@ Expected: All E2E tests PASS.
 - [ ] **Step 3: Update `build.ps1` and `build.bat`**
 
 Update `build.ps1`:
+
 ```powershell
 # PowerShell build script for Zephyr
 $ErrorActionPreference = "Stop"
@@ -336,6 +356,7 @@ if (Test-Path $source) {
 ```
 
 Update `build.bat`:
+
 ```batch
 @echo off
 setlocal enabledelayedexpansion
@@ -382,9 +403,11 @@ git commit -m "build: update integration test binary references and build script
 ### Task 6: Rebrand README and Documentation
 
 **Files:**
+
 - Modify: `README.md`
 
 **Interfaces:**
+
 - Consumes: Project features and specs
 - Produces: Complete, updated `README.md` reflecting the Zephyr identity
 
@@ -394,25 +417,27 @@ Update title:
 `# Zephyr (v1.0.0)`
 Update overview text to introduce **Zephyr** as the high-performance concurrent MySQL data engine.
 Update binary path references:
+
 - Linux / macOS: `target/release/zephyr`
 - Windows: `target/release/zephyr.exe`
 
 - [ ] **Step 2: Update all Bash and PowerShell command snippets in README.md**
 
 Replace all invocations:
-* `mysql-turboload export ...` $\rightarrow$ `zephyr export ...`
-* `.\target\release\mysql-turboload.exe export ...` $\rightarrow$ `.\target\release\zephyr.exe export ...`
-* `mysql-turboload import ...` $\rightarrow$ `zephyr import ...`
-* `.\target\release\mysql-turboload.exe import ...` $\rightarrow$ `.\target\release\zephyr.exe import ...`
-* `mysql-turboload.toml` $\rightarrow$ `zephyr.toml`
 
-- [ ] **Step 3: Update architecture diagrams and comparison table in README.md**
+- `zephyr export ...` $\rightarrow$ `zephyr export ...`
+- `.\target\release\zephyr.exe export ...` $\rightarrow$ `.\target\release\zephyr.exe export ...`
+- `zephyr import ...` $\rightarrow$ `zephyr import ...`
+- `.\target\release\zephyr.exe import ...` $\rightarrow$ `.\target\release\zephyr.exe import ...`
+- `zephyr.toml` $\rightarrow$ `zephyr.toml`
 
-Replace `MySQL TurboLoad Enterprise` in diagram and table headings with `Zephyr`.
+* [ ] **Step 3: Update architecture diagrams and comparison table in README.md**
 
-- [ ] **Step 4: Verify README.md has zero stale `mysql-turboload` command examples**
+Replace `MySQL zephyr Enterprise` in diagram and table headings with `Zephyr`.
 
-Search for `mysql-turboload` in `README.md` to confirm only historical/fallback references remain.
+- [ ] **Step 4: Verify README.md has zero stale `zephyr` command examples**
+
+Search for `zephyr` in `README.md` to confirm only historical/fallback references remain.
 
 - [ ] **Step 5: Commit**
 
