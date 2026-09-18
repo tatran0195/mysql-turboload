@@ -9,6 +9,7 @@ mod progress;
 mod runner;
 mod scanner;
 mod server_tuning;
+pub mod ui;
 
 use anyhow::Result;
 use colored::Colorize;
