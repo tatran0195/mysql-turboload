@@ -21,6 +21,7 @@ use crate::mysql_locator::{find_mysql, find_mysqldump};
 use crate::option_file::MySqlOptionFile;
 use crate::progress::{CountingReader, ProgressTracker, WorkerLiveState};
 use crate::runner::{FailedTask, RunSummary, RunSummaryState, WorkerEvent};
+use crate::ui;
 
 #[derive(Debug, Clone)]
 pub struct ExportTask {
@@ -178,54 +179,72 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
     }
 
     // Header Banner
-    println!();
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
-    println!("{}", " MYSQL TURBOLOAD ENTERPRISE v1.0.0".cyan().bold());
-    println!("{}", " Concurrent Bulk Database Export Engine".cyan());
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
-    println!("Target Server : {}:{}", args.host, args.port);
-    println!("MySQL User    : {}", args.user);
-    println!("MySQL Dump Bin: {}", mysqldump_bin.display());
     let dir_note = if !args.dir.exists() {
         " (will be created)"
     } else {
         ""
     };
-    println!("Output Folder : {}{}", args.dir.display(), dir_note);
-    println!("Manifest File : {}", manifest.file_path().display());
-    println!("Workers       : {}", args.resolved_workers());
+    let mut card_items = vec![
+        ("Target Server", format!("{}:{}", args.host, args.port)),
+        ("MySQL User", args.user.clone()),
+        ("MySQL Dump Bin", ui::truncate_path_str(&mysqldump_bin.display().to_string(), 52)),
+        ("Output Folder", format!("{}{}", args.dir.display(), dir_note)),
+        ("Manifest File", manifest.file_path().display().to_string()),
+        ("Workers", format!("{} threads", args.resolved_workers())),
+    ];
+
+    if args.compress {
+        card_items.push(("Compression", "Gzip (.sql.gz)".to_string()));
+    }
+
     if args.resume && total_scanned_count != tasks.len() {
         let skipped_count = total_scanned_count - tasks.len();
-        let skipped_mb = ((total_scanned_bytes - remaining_bytes) as f64) / (1024.0 * 1024.0);
-        let rem_mb = (remaining_bytes as f64) / (1024.0 * 1024.0);
-        println!(
-            "Total In Schemas: {} tables ({:.2} MB)",
-            total_scanned_count,
-            (total_scanned_bytes as f64) / (1024.0 * 1024.0)
-        );
-        println!(
-            "Already Exported: {} tables ({:.2} MB) [Skipped via manifest]",
-            skipped_count.to_string().yellow(),
-            skipped_mb
-        );
-        println!(
-            "To Export       : {} tables ({:.2} MB)",
-            tasks.len().to_string().green().bold(),
-            rem_mb
-        );
+        let skipped_bytes = total_scanned_bytes.saturating_sub(remaining_bytes);
+        card_items.push((
+            "Total In Schemas",
+            format!(
+                "{} tables ({})",
+                total_scanned_count,
+                ui::format_bytes(total_scanned_bytes)
+            ),
+        ));
+        card_items.push((
+            "Already Exported",
+            format!(
+                "{} tables ({}) [Skipped via manifest]",
+                skipped_count.to_string().yellow(),
+                ui::format_bytes(skipped_bytes)
+            ),
+        ));
+        card_items.push((
+            "To Export",
+            format!(
+                "{} tables ({})",
+                tasks.len().to_string().green().bold(),
+                ui::format_bytes(remaining_bytes)
+            ),
+        ));
     } else {
-        println!("Tables To Dump: {}", tasks.len());
-        println!(
-            "Estimated Size: {:.2} MB",
-            (remaining_bytes as f64) / (1024.0 * 1024.0)
-        );
+        card_items.push((
+            "Tables To Dump",
+            format!(
+                "{} tables ({})",
+                tasks.len().to_string().green().bold(),
+                ui::format_bytes(remaining_bytes)
+            ),
+        ));
     }
+
+    println!();
+    println!(
+        "{}",
+        ui::render_card(
+            "ZEPHYR",
+            env!("CARGO_PKG_VERSION"),
+            "High-Performance Concurrent MySQL Export Engine",
+            &card_items
+        )
+    );
 
     // Database breakdown
     println!();
@@ -234,8 +253,7 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
     db_names.sort();
     for db in &db_names {
         if let Some((count, bytes)) = db_summaries.get(db) {
-            let mb = (*bytes as f64) / (1024.0 * 1024.0);
-            println!("  {:<25} {:>4} tables  {:>10.2} MB", db.cyan(), count, mb);
+            println!("{}", ui::render_database_row(db, *count, *bytes, None));
         }
     }
     println!();
@@ -251,24 +269,21 @@ pub fn run_export(mut args: ExportArgs) -> Result<()> {
     }
 
     // Ensure output and log directories exist before starting parallel export
-    fs::create_dir_all(&args.dir).with_context(|| {
-        format!(
-            "Failed to create output directory: {}",
-            args.dir.display()
-        )
-    })?;
+    fs::create_dir_all(&args.dir)
+        .with_context(|| format!("Failed to create output directory: {}", args.dir.display()))?;
     fs::create_dir_all(&log_dir)
         .with_context(|| format!("Failed to create log directory: {}", log_dir.display()))?;
 
     println!(
         "{}",
-        "==================================================".green()
+        ui::render_section_divider(&format!(
+            "Starting Parallel Export ({} Workers)",
+            args.resolved_workers()
+        ))
+        .green()
+        .bold()
     );
-    println!("{}", " STARTING PARALLEL EXPORT".green().bold());
-    println!(
-        "{}",
-        "==================================================".green()
-    );
+    println!();
 
     let total_tasks = tasks.len();
     let tracker = Arc::new(ProgressTracker::new(
@@ -477,7 +492,7 @@ where
                 // Create standard Workbench/mysqldump header
                 let header = format!(
                     "-- ------------------------------------------------------\n\
-                     -- MySQL TurboLoad Enterprise Dump\n\
+                     -- MySQL Zephyr Enterprise Dump\n\
                      -- Host: {}    Database: {}\n\
                      -- ------------------------------------------------------\n\
                      -- Current Database: `{}`\n\
@@ -573,7 +588,10 @@ where
                         encoder.write_all(header_content.as_bytes())?;
 
                         loop {
-                            let n = match std::io::Read::read(&mut counting_reader, &mut transfer_buf) {
+                            let n = match std::io::Read::read(
+                                &mut counting_reader,
+                                &mut transfer_buf,
+                            ) {
                                 Ok(0) => break,
                                 Ok(n) => n,
                                 Err(e) => {
@@ -595,7 +613,10 @@ where
                         buf_writer.write_all(header_content.as_bytes())?;
 
                         loop {
-                            let n = match std::io::Read::read(&mut counting_reader, &mut transfer_buf) {
+                            let n = match std::io::Read::read(
+                                &mut counting_reader,
+                                &mut transfer_buf,
+                            ) {
                                 Ok(0) => break,
                                 Ok(n) => n,
                                 Err(e) => {
