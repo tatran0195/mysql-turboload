@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::runner::{RunSummary, RunSummaryState, WorkerEvent};
+use crate::ui;
 
 /// Transparent wrapper around any `Read` stream that counts bytes read using an `AtomicU64`.
 pub struct CountingReader<R> {
@@ -113,7 +114,6 @@ pub fn format_duration_compact(d: Duration) -> String {
     }
 }
 
-
 pub struct ProgressTracker {
     pub multi_progress: Option<MultiProgress>,
     pub main_bar: Option<ProgressBar>,
@@ -155,9 +155,9 @@ impl ProgressTracker {
         let mp = MultiProgress::new();
 
         let style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:36.cyan/blue}] {pos}/{len} ({percent}%) | {msg}")
+            .template("{spinner:.cyan} [{elapsed_precise}] [{bar:32.cyan/blue}] {pos}/{len} ({percent}%) | {msg}")
             .unwrap()
-            .progress_chars("#>-");
+            .progress_chars("█▉▊▋▌▍▎▏ ");
 
         let pb = mp.add(ProgressBar::new(total_tasks as u64));
         pb.set_style(style);
@@ -167,7 +167,7 @@ impl ProgressTracker {
         let mut worker_bars = Vec::new();
         let worker_style = ProgressStyle::default_spinner()
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-            .template("  {spinner:.blue} [W{prefix}] {msg}")
+            .template("  {spinner:.cyan} [W{prefix}] {msg}")
             .unwrap();
 
         for i in 1..=num_workers {
@@ -302,9 +302,9 @@ impl ProgressTracker {
 
                 // Update main bar message with live streaming MB and critical-path overall ETA
                 let done_from_finished = completed_bytes_ref.load(Ordering::Relaxed);
-                let total_done_mb =
-                    ((done_from_finished + live_active_bytes) as f64) / (1024.0 * 1024.0);
-                let total_mb_val = (total_bytes as f64) / (1024.0 * 1024.0);
+                let current_total_done = done_from_finished + live_active_bytes;
+                let done_str = ui::format_bytes_compact(current_total_done);
+                let total_str = ui::format_bytes_compact(total_bytes);
                 let failed_count_val = failed_count_ref.load(Ordering::Relaxed);
 
                 let failed_str = if failed_count_val > 0 {
@@ -320,8 +320,8 @@ impl ProgressTracker {
                 };
 
                 let msg = format!(
-                    "{:.1}/{:.1} MB | {} active{}{}",
-                    total_done_mb, total_mb_val, active_count, eta_str, failed_str
+                    "{} / {} | {} active{}{}",
+                    done_str, total_str, active_count, eta_str, failed_str
                 );
                 main_bar_clone.set_message(msg);
             }
@@ -439,7 +439,7 @@ impl ProgressTracker {
             wp.finish_and_clear();
         }
         if let Some(ref pb) = self.main_bar {
-            pb.finish_with_message("Completed");
+            pb.finish_with_message("Completed".green().bold().to_string());
         }
     }
 }
@@ -519,8 +519,16 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn test_progress_tracker_initialization() {
+        let tracker = ProgressTracker::new(10, 1024 * 1024 * 50, 4, false);
+        assert!(!tracker.no_progress);
+        assert_eq!(tracker.live_states.len(), 4);
+        tracker.finish();
+    }
+
+    #[test]
     fn test_counting_reader_tracks_exact_bytes() {
-        let data = b"Hello, MySQL TurboLoad Enterprise!";
+        let data = b"Hello, MySQL Zephyr Enterprise!";
         let counter = Arc::new(AtomicU64::new(0));
         let mut reader = CountingReader::new(Cursor::new(data), Arc::clone(&counter));
         let mut buf = Vec::new();
@@ -547,7 +555,10 @@ mod tests {
     fn test_format_duration_compact() {
         assert_eq!(format_duration_compact(Duration::from_secs(5)), "00:05");
         assert_eq!(format_duration_compact(Duration::from_secs(65)), "01:05");
-        assert_eq!(format_duration_compact(Duration::from_secs(3665)), "01:01:05");
+        assert_eq!(
+            format_duration_compact(Duration::from_secs(3665)),
+            "01:01:05"
+        );
     }
 
     #[test]
@@ -570,4 +581,3 @@ mod tests {
         assert!(!state.is_committing.load(Ordering::SeqCst));
     }
 }
-
