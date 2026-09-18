@@ -836,55 +836,58 @@ where
 
 fn print_export_summary(summary: &RunSummary, log_dir: &Path) {
     println!();
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
-    if summary.cancelled {
-        println!("{}", " EXPORT CANCELLED BY USER".yellow().bold());
-    } else if summary.failed_tasks.is_empty() {
-        println!("{}", " EXPORT FINISHED SUCCESSFULLY".green().bold());
+    let is_success = summary.failed_tasks.is_empty() && !summary.cancelled;
+    let is_cancelled = summary.cancelled;
+
+    let status_title = if is_cancelled {
+        "⚠ EXPORT CANCELLED BY USER".to_string()
+    } else if is_success {
+        "✔ EXPORT COMPLETED SUCCESSFULLY".to_string()
     } else {
-        println!("{}", " EXPORT FINISHED WITH ERRORS".red().bold());
-    }
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
+        format!("✖ EXPORT FINISHED WITH {} ERRORS", summary.failed_tasks.len())
+    };
 
     let completed_mb = (summary.completed_bytes as f64) / (1024.0 * 1024.0);
     let total_secs = summary.elapsed.as_secs_f64().max(0.001);
     let mb_per_sec = completed_mb / total_secs;
 
-    println!(
-        "Tables Exported : {} / {}",
-        summary.completed_count.to_string().green(),
-        summary.total_tasks
-    );
+    let mut metrics = vec![
+        (
+            "Tables Exported",
+            format!("{} / {}", summary.completed_count.to_string().green().bold(), summary.total_tasks),
+        ),
+    ];
+
     if !summary.failed_tasks.is_empty() {
-        println!(
-            "Failed Tables   : {}",
-            summary.failed_tasks.len().to_string().red().bold()
-        );
+        metrics.push((
+            "Failed Tables",
+            summary.failed_tasks.len().to_string().red().bold().to_string(),
+        ));
     }
-    println!(
-        "Estimated Volume: {:.2} MB ({:.1} MB/s)",
-        completed_mb, mb_per_sec
-    );
-    println!(
-        "Elapsed Time    : {:02}:{:02}:{:02}",
-        (summary.elapsed.as_secs() / 3600),
-        (summary.elapsed.as_secs() % 3600) / 60,
-        (summary.elapsed.as_secs() % 60)
-    );
+
+    metrics.push((
+        "Estimated Volume",
+        format!(
+            "{} ({:.1} MB/s)",
+            ui::format_bytes(summary.completed_bytes),
+            mb_per_sec
+        ),
+    ));
+
+    metrics.push((
+        "Total Duration",
+        crate::progress::format_duration_compact(summary.elapsed),
+    ));
+
+    println!("{}", ui::render_summary_card(&status_title, is_success, is_cancelled, &metrics));
 
     if !summary.failed_tasks.is_empty() {
         println!();
-        println!("{}", "FAILED TABLES SUMMARY:".red().bold());
+        println!("{}", "Failed Tables:".red().bold());
         for task in &summary.failed_tasks {
             println!(
                 "  {} [{}] {} ({:.2} MB, Exit {:?})",
-                "•".red(),
+                "✖".red().bold(),
                 task.database.yellow(),
                 task.file_name,
                 task.size_mb,
@@ -898,7 +901,7 @@ fn print_export_summary(summary: &RunSummary, log_dir: &Path) {
         println!();
         println!(
             "{}",
-            "TO RESUME AND FINISH REMAINING TABLES:".yellow().bold()
+            "To resume and export remaining tables:".yellow().bold()
         );
         println!(
             "  zephyr export --resume --manifest {}",

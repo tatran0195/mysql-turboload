@@ -446,56 +446,60 @@ impl ProgressTracker {
 
 pub fn print_summary(summary: &RunSummary, log_dir: &std::path::Path) {
     println!();
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
-    if summary.cancelled {
-        println!("{}", " IMPORT CANCELLED BY USER".yellow().bold());
-    } else if summary.failed_tasks.is_empty() {
-        println!("{}", " IMPORT FINISHED SUCCESSFULLY".green().bold());
-    } else {
-        println!("{}", " IMPORT FINISHED WITH ERRORS".red().bold());
-    }
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
+    let is_success = summary.failed_tasks.is_empty() && !summary.cancelled;
+    let is_cancelled = summary.cancelled;
 
-    let total_mb = (summary.total_bytes as f64) / (1024.0 * 1024.0);
+    let status_title = if is_cancelled {
+        "⚠ IMPORT CANCELLED BY USER".to_string()
+    } else if is_success {
+        "✔ IMPORT COMPLETED SUCCESSFULLY".to_string()
+    } else {
+        format!("✖ IMPORT FINISHED WITH {} ERRORS", summary.failed_tasks.len())
+    };
+
     let completed_mb = (summary.completed_bytes as f64) / (1024.0 * 1024.0);
     let total_secs = summary.elapsed.as_secs_f64().max(0.001);
     let mb_per_sec = completed_mb / total_secs;
 
-    println!(
-        "Tables Imported : {} / {}",
-        summary.completed_count.to_string().green(),
-        summary.total_tasks
-    );
+    let mut metrics = vec![
+        (
+            "Tables Imported",
+            format!("{} / {}", summary.completed_count.to_string().green().bold(), summary.total_tasks),
+        ),
+    ];
+
     if !summary.failed_tasks.is_empty() {
-        println!(
-            "Failed Tables   : {}",
-            summary.failed_tasks.len().to_string().red().bold()
-        );
+        metrics.push((
+            "Failed Tables",
+            summary.failed_tasks.len().to_string().red().bold().to_string(),
+        ));
     }
-    println!(
-        "Volume Processed: {:.2} MB / {:.2} MB ({:.1} MB/s)",
-        completed_mb, total_mb, mb_per_sec
-    );
-    println!(
-        "Elapsed Time    : {:02}:{:02}:{:02}",
-        (summary.elapsed.as_secs() / 3600),
-        (summary.elapsed.as_secs() % 3600) / 60,
-        (summary.elapsed.as_secs() % 60)
-    );
+
+    let total_mb = (summary.total_bytes as f64) / (1024.0 * 1024.0);
+    metrics.push((
+        "Volume Processed",
+        format!(
+            "{} / {:.2} MB ({:.1} MB/s)",
+            ui::format_bytes(summary.completed_bytes),
+            total_mb,
+            mb_per_sec
+        ),
+    ));
+
+    metrics.push((
+        "Total Duration",
+        format_duration_compact(summary.elapsed),
+    ));
+
+    println!("{}", ui::render_summary_card(&status_title, is_success, is_cancelled, &metrics));
 
     if !summary.failed_tasks.is_empty() {
         println!();
-        println!("{}", "FAILED TABLES SUMMARY:".red().bold());
+        println!("{}", "Failed Tables:".red().bold());
         for task in &summary.failed_tasks {
             println!(
                 "  {} [{}] {} ({:.2} MB, Exit {:?})",
-                "•".red(),
+                "✖".red().bold(),
                 task.database.yellow(),
                 task.file_name,
                 task.size_mb,
@@ -507,7 +511,7 @@ pub fn print_summary(summary: &RunSummary, log_dir: &std::path::Path) {
 
         let retry_file = log_dir.join("failed_files.txt");
         println!();
-        println!("{}", "TO RETRY ONLY FAILED TABLES:".yellow().bold());
+        println!("{}", "To retry only failed tables:".yellow().bold());
         println!("  zephyr --retry-file {}", retry_file.display());
     }
     println!();
