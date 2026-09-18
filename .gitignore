@@ -22,3 +22,4 @@ import-logs/
 manifest.json
 manifest.json.*
 failed_files.txt
+.superpowers/
