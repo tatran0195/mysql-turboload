@@ -300,6 +300,65 @@ mysql-turboload import --dir "./Dump20260917" --filter "users"
 
 ---
 
+## Persistent Configuration File (`turboload.toml`)
+
+MySQL TurboLoad supports persistent configuration via a TOML file, eliminating the need to pass repetitive connection and performance parameters on every CLI invocation.
+
+### Auto-Discovery Order
+When `--config` is not explicitly passed, `mysql-turboload` automatically searches for a configuration file in the following order:
+1. `./turboload.toml` (Current Working Directory)
+2. `./mysql-turboload.toml` (Current Working Directory)
+3. Platform user configuration directory:
+   * **Windows**: `%APPDATA%\mysql-turboload\config.toml` (e.g. `C:\Users\<user>\AppData\Roaming\mysql-turboload\config.toml`)
+   * **Linux / macOS**: `~/.config/mysql-turboload/config.toml` (or `$XDG_CONFIG_HOME/mysql-turboload/config.toml`)
+
+### Precedence Hierarchy
+Settings resolve according to this strict hierarchy:
+1. **Explicit CLI Flags** (e.g. `-H 192.168.1.50`, `-w 16`, `-d ./custom-dir`)
+2. **Environment Variables** (e.g. `MYSQL_PWD`)
+3. **TOML Configuration File** (`[connection]`, `[import]`, `[export]`)
+4. **Built-in Defaults**
+
+To bypass configuration loading entirely (e.g. in CI/CD pipelines), pass the `--no-config` flag. To specify a custom configuration file path, use `--config <FILE>`.
+
+### Example `turboload.toml`
+
+```toml
+[connection]
+host = "127.0.0.1"
+port = 3306
+user = "root"
+# password = "secret"    # Optional; CLI prompt or MYSQL_PWD env var recommended for security
+charset = "utf8mb4"
+max_allowed_packet = "1G"
+# mysql_bin = "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe"
+# mysqldump_bin = "C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqldump.exe"
+
+[import]
+dir = "./dumps"
+workers = 8
+database = "my_database"
+tune_server = true
+buffer_pool_size = "4G"
+io_capacity = 2500
+log_dir = "./logs"
+resume = true
+
+[export]
+dir = "./export-dumps"
+compress = true
+workers = 8
+database = "my_database"
+routines = true
+events = true
+triggers = true
+net_buffer_length = "1M"
+log_dir = "./export-dumps/logs"
+resume = true
+```
+
+---
+
 ## Complete CLI Reference
 
 ### Root & Import Command Options
@@ -312,6 +371,8 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
+      --config <FILE>                 Explicit path to a TOML configuration file
+      --no-config                     Bypass loading any TOML configuration file
   -d, --dir <DIR>                     Directory containing .sql or .sql.gz dump files [default: .]
   -H, --host <HOST>                   MySQL server host [default: 127.0.0.1]
   -P, --port <PORT>                   MySQL server port [default: 3306]
@@ -345,7 +406,9 @@ Options:
 Usage: mysql-turboload export [OPTIONS]
 
 Options:
-  -o, --output-dir, -d, --dir <DIR>   Output directory for exported dump files [default: export-dumps]
+      --config <FILE>                 Explicit path to a TOML configuration file
+      --no-config                     Bypass loading any TOML configuration file
+  -d, --dir <DIR>                     Directory to store exported dump files [default: export-dumps]
   -z, --compress                      Compress exported dump files with gzip (.sql.gz)
   -B, --database <NAME>               Target single database to export
       --databases <NAMES>             Comma-separated list of databases to export (e.g. "db1,db2")
