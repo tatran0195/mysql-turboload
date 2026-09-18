@@ -3,12 +3,12 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(
-    name = "mysql-turboload",
+    name = "zephyr",
     author = "Enterprise Database Systems",
     version = "1.0.0",
-    about = "MySQL TurboLoad Enterprise: High-performance concurrent bulk data ingestion & export engine",
-    long_about = "MySQL TurboLoad Enterprise\n\
-                  A resilient, enterprise-grade CLI application designed to restore and export MySQL database\n\
+    about = "Zephyr: High-performance concurrent bulk data engine for MySQL & MariaDB",
+    long_about = "Zephyr\n\
+                  A resilient, high-performance CLI engine designed to restore and export MySQL database\n\
                   tables concurrently. Features dynamic MPMC work-stealing, live server-side InnoDB performance tuning,\n\
                   atomic stateful resume manifests, and high-throughput zero-copy streaming."
 )]
@@ -357,13 +357,13 @@ mod tests {
 
     #[test]
     fn test_import_args_default_log_dir() {
-        let cli = Cli::try_parse_from(["mysql-turboload"]).unwrap();
+        let cli = Cli::try_parse_from(["zephyr"]).unwrap();
         assert_eq!(cli.import.log_dir, PathBuf::from("logs"));
     }
 
     #[test]
     fn test_export_args_default_and_custom_log_dir() {
-        let cli = Cli::try_parse_from(["mysql-turboload", "export", "-d", "./my-dumps"]).unwrap();
+        let cli = Cli::try_parse_from(["zephyr", "export", "-d", "./my-dumps"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli.command {
             assert_eq!(
                 export_args.resolved_log_dir(),
@@ -374,7 +374,7 @@ mod tests {
         }
 
         let cli2 = Cli::try_parse_from([
-            "mysql-turboload",
+            "zephyr",
             "export",
             "-d",
             "./my-dumps",
@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn test_export_args_dir_flags() {
         let cli_short =
-            Cli::try_parse_from(["mysql-turboload", "export", "-d", "./my-target"]).unwrap();
+            Cli::try_parse_from(["zephyr", "export", "-d", "./my-target"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_short.command {
             assert_eq!(export_args.dir, PathBuf::from("./my-target"));
         } else {
@@ -403,7 +403,7 @@ mod tests {
         }
 
         let cli_long =
-            Cli::try_parse_from(["mysql-turboload", "export", "--dir", "./my-target"]).unwrap();
+            Cli::try_parse_from(["zephyr", "export", "--dir", "./my-target"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_long.command {
             assert_eq!(export_args.dir, PathBuf::from("./my-target"));
         } else {
@@ -413,14 +413,14 @@ mod tests {
 
     #[test]
     fn test_export_args_compress_flags() {
-        let cli_flag = Cli::try_parse_from(["mysql-turboload", "export", "--compress"]).unwrap();
+        let cli_flag = Cli::try_parse_from(["zephyr", "export", "--compress"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_flag.command {
             assert!(export_args.compress);
         } else {
             panic!("Expected export command");
         }
 
-        let cli_short = Cli::try_parse_from(["mysql-turboload", "export", "-z"]).unwrap();
+        let cli_short = Cli::try_parse_from(["zephyr", "export", "-z"]).unwrap();
         if let Some(Commands::Export(export_args)) = cli_short.command {
             assert!(export_args.compress);
         } else {
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_root_dir_inheritance_logic() {
-        let cli = Cli::try_parse_from(["mysql-turboload", "-d", "./root-dumps", "export"]).unwrap();
+        let cli = Cli::try_parse_from(["zephyr", "-d", "./root-dumps", "export"]).unwrap();
         assert_eq!(cli.import.dir, PathBuf::from("./root-dumps"));
         if let Some(Commands::Export(mut export_args)) = cli.command {
             if export_args.dir == std::path::Path::new("export-dumps")
