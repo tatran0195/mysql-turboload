@@ -549,6 +549,27 @@ mod tests {
 
         assert_eq!(cfg.export.dir, Some(PathBuf::from("./export-dumps")));
         assert_eq!(cfg.export.compress, Some(true));
+
+        // Also verify that uncommenting every commented option in the example file produces a valid config
+        let uncommented: String = content
+            .lines()
+            .map(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with("# ") && trimmed.contains(" = ") {
+                    &trimmed[2..]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let full_cfg = ZephyrConfig::from_toml_str(&uncommented)
+            .expect("uncommented zephyr.example.toml should parse without unknown field errors");
+        assert_eq!(full_cfg.import.workers, Some(8));
+        assert_eq!(full_cfg.export.workers, Some(8));
+        assert_eq!(full_cfg.import.tune_server, Some(false));
+        assert_eq!(full_cfg.export.routines, Some(true));
     }
 }
 
