@@ -72,9 +72,20 @@ pub fn format_bytes_compact(bytes: u64) -> String {
     }
 }
 
-const CARD_INNER_WIDTH: usize = 61;
+/// Shortens a path or long string with an ellipsis in the middle if it exceeds max_chars.
+pub fn truncate_path_str(path: &str, max_chars: usize) -> String {
+    let count = path.chars().count();
+    if count <= max_chars {
+        return path.to_string();
+    }
+    let keep = max_chars.saturating_sub(3);
+    let half = keep / 2;
+    let start: String = path.chars().take(half).collect();
+    let end: String = path.chars().skip(count - (keep - half)).collect();
+    format!("{start}...{end}")
+}
 
-/// Renders a framed startup card with cyan borders.
+/// Renders a framed startup card with cyan borders, dynamically sizing to content.
 pub fn render_card(
     title: &str,
     version: &str,
@@ -83,8 +94,18 @@ pub fn render_card(
 ) -> String {
     let mut out = String::new();
 
+    // Determine required card inner width (min 61)
+    let max_item_len = items
+        .iter()
+        .map(|(label, value)| visible_width(&format!("  • {:<15} : {value}", label)))
+        .max()
+        .unwrap_or(0);
+    let title_vis_len = 2 + visible_width(title) + 1 + visible_width(&format!("v{version}"));
+    let sub_vis_len = 2 + visible_width(subtitle);
+    let inner_width = max_item_len.max(title_vis_len).max(sub_vis_len).max(61) + 2;
+
     // Top border
-    let top_border = format!("╭{}╮", "─".repeat(CARD_INNER_WIDTH)).cyan().to_string();
+    let top_border = format!("╭{}╮", "─".repeat(inner_width)).cyan().to_string();
     out.push_str(&top_border);
     out.push('\n');
 
@@ -92,18 +113,18 @@ pub fn render_card(
     let title_styled = title.cyan().bold().to_string();
     let version_styled = format!("v{version}").green().bold().to_string();
     let header_content = format!("  {title_styled} {version_styled}");
-    let header_vis_len = visible_width(&header_content);
-    let pad_len = CARD_INNER_WIDTH.saturating_sub(header_vis_len);
+    let header_vis = visible_width(&header_content);
+    let pad_len = inner_width.saturating_sub(header_vis);
     out.push_str(&format!("│{header_content}{}│\n", " ".repeat(pad_len)));
 
     // Subtitle line
     let sub_content = format!("  {}", subtitle.cyan());
-    let sub_vis_len = visible_width(&sub_content);
-    let pad_len = CARD_INNER_WIDTH.saturating_sub(sub_vis_len);
+    let sub_vis = visible_width(&sub_content);
+    let pad_len = inner_width.saturating_sub(sub_vis);
     out.push_str(&format!("│{sub_content}{}│\n", " ".repeat(pad_len)));
 
     // Mid divider
-    let mid_divider = format!("├{}┤", "─".repeat(CARD_INNER_WIDTH)).cyan().to_string();
+    let mid_divider = format!("├{}┤", "─".repeat(inner_width)).cyan().to_string();
     out.push_str(&mid_divider);
     out.push('\n');
 
@@ -111,19 +132,19 @@ pub fn render_card(
     for (label, value) in items {
         let bullet = "•".dimmed();
         let item_content = format!("  {bullet} {:<15} : {value}", label);
-        let item_vis_len = visible_width(&item_content);
-        let pad_len = CARD_INNER_WIDTH.saturating_sub(item_vis_len);
+        let item_vis = visible_width(&item_content);
+        let pad_len = inner_width.saturating_sub(item_vis);
         out.push_str(&format!("│{item_content}{}│\n", " ".repeat(pad_len)));
     }
 
     // Bottom border
-    let bottom_border = format!("╰{}╯", "─".repeat(CARD_INNER_WIDTH)).cyan().to_string();
+    let bottom_border = format!("╰{}╯", "─".repeat(inner_width)).cyan().to_string();
     out.push_str(&bottom_border);
 
     out
 }
 
-/// Renders a completion summary card with color corresponding to outcome.
+/// Renders a completion summary card with color corresponding to outcome, dynamically sizing to content.
 pub fn render_summary_card(
     status_title: &str,
     is_success: bool,
@@ -132,15 +153,24 @@ pub fn render_summary_card(
 ) -> String {
     let mut out = String::new();
 
+    // Determine required card inner width (min 61)
+    let max_metric_len = metrics
+        .iter()
+        .map(|(label, value)| visible_width(&format!("  • {:<16} : {value}", label)))
+        .max()
+        .unwrap_or(0);
+    let status_vis = 2 + visible_width(status_title);
+    let inner_width = max_metric_len.max(status_vis).max(61) + 2;
+
     let (top_char, mid_char, bot_char) = ("╭", "├", "╰");
     let (top_right, mid_right, bot_right) = ("╮", "┤", "╯");
 
     let top_border = if is_cancelled {
-        format!("{}{}{}", top_char, "─".repeat(CARD_INNER_WIDTH), top_right).yellow().to_string()
+        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right).yellow().to_string()
     } else if is_success {
-        format!("{}{}{}", top_char, "─".repeat(CARD_INNER_WIDTH), top_right).green().to_string()
+        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right).green().to_string()
     } else {
-        format!("{}{}{}", top_char, "─".repeat(CARD_INNER_WIDTH), top_right).red().to_string()
+        format!("{}{}{}", top_char, "─".repeat(inner_width), top_right).red().to_string()
     };
     out.push_str(&top_border);
     out.push('\n');
@@ -154,16 +184,16 @@ pub fn render_summary_card(
         format!("  {status_title}").red().bold().to_string()
     };
     let status_vis_len = visible_width(&status_content);
-    let pad_len = CARD_INNER_WIDTH.saturating_sub(status_vis_len);
+    let pad_len = inner_width.saturating_sub(status_vis_len);
     out.push_str(&format!("│{status_content}{}│\n", " ".repeat(pad_len)));
 
     // Mid Divider
     let mid_divider = if is_cancelled {
-        format!("{}{}{}", mid_char, "─".repeat(CARD_INNER_WIDTH), mid_right).yellow().to_string()
+        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right).yellow().to_string()
     } else if is_success {
-        format!("{}{}{}", mid_char, "─".repeat(CARD_INNER_WIDTH), mid_right).green().to_string()
+        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right).green().to_string()
     } else {
-        format!("{}{}{}", mid_char, "─".repeat(CARD_INNER_WIDTH), mid_right).red().to_string()
+        format!("{}{}{}", mid_char, "─".repeat(inner_width), mid_right).red().to_string()
     };
     out.push_str(&mid_divider);
     out.push('\n');
@@ -172,18 +202,18 @@ pub fn render_summary_card(
     for (label, value) in metrics {
         let bullet = "•".dimmed();
         let metric_content = format!("  {bullet} {:<16} : {value}", label);
-        let metric_vis_len = visible_width(&metric_content);
-        let pad_len = CARD_INNER_WIDTH.saturating_sub(metric_vis_len);
+        let metric_vis = visible_width(&metric_content);
+        let pad_len = inner_width.saturating_sub(metric_vis);
         out.push_str(&format!("│{metric_content}{}│\n", " ".repeat(pad_len)));
     }
 
     // Bottom border
     let bottom_border = if is_cancelled {
-        format!("{}{}{}", bot_char, "─".repeat(CARD_INNER_WIDTH), bot_right).yellow().to_string()
+        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right).yellow().to_string()
     } else if is_success {
-        format!("{}{}{}", bot_char, "─".repeat(CARD_INNER_WIDTH), bot_right).green().to_string()
+        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right).green().to_string()
     } else {
-        format!("{}{}{}", bot_char, "─".repeat(CARD_INNER_WIDTH), bot_right).red().to_string()
+        format!("{}{}{}", bot_char, "─".repeat(inner_width), bot_right).red().to_string()
     };
     out.push_str(&bottom_border);
 

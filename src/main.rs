@@ -212,49 +212,63 @@ fn run_import(mut cli: ImportArgs) -> Result<()> {
     }
 
     // Header Banner
+    let mut card_items = vec![
+        ("Target Server", format!("{}:{}", cli.host, cli.port)),
+        ("MySQL User", cli.user.clone()),
+        ("MySQL Client", ui::truncate_path_str(&mysql_bin.display().to_string(), 52)),
+        ("Source Folder", cli.dir.display().to_string()),
+        ("Manifest File", manifest.file_path().display().to_string()),
+        ("Workers", format!("{} threads", cli.resolved_workers())),
+    ];
+
+    if cli.resume && total_scanned_count != tasks.len() {
+        let skipped_count = total_scanned_count - tasks.len();
+        let skipped_bytes = total_scanned_bytes.saturating_sub(remaining_bytes);
+        card_items.push((
+            "Total In Dump",
+            format!(
+                "{} files ({})",
+                total_scanned_count,
+                ui::format_bytes(total_scanned_bytes)
+            ),
+        ));
+        card_items.push((
+            "Already Done",
+            format!(
+                "{} files ({}) [Skipped via manifest]",
+                skipped_count.to_string().yellow(),
+                ui::format_bytes(skipped_bytes)
+            ),
+        ));
+        card_items.push((
+            "To Import",
+            format!(
+                "{} files ({})",
+                tasks.len().to_string().green().bold(),
+                ui::format_bytes(remaining_bytes)
+            ),
+        ));
+    } else {
+        card_items.push((
+            "Total Workload",
+            format!(
+                "{} files ({})",
+                tasks.len().to_string().green().bold(),
+                ui::format_bytes(remaining_bytes)
+            ),
+        ));
+    }
+
     println!();
     println!(
         "{}",
-        "==================================================".cyan()
+        ui::render_card(
+            "ZEPHYR",
+            env!("CARGO_PKG_VERSION"),
+            "High-Performance Concurrent MySQL Data Engine",
+            &card_items
+        )
     );
-    println!("{}", " ZEPHYR v1.0.0".cyan().bold());
-    println!("{}", " High-Performance Concurrent MySQL Data Engine".cyan());
-    println!(
-        "{}",
-        "==================================================".cyan()
-    );
-    println!("Target Server : {}:{}", cli.host, cli.port);
-    println!("MySQL User    : {}", cli.user);
-    println!("MySQL Client  : {}", mysql_bin.display());
-    println!("Source Folder : {}", cli.dir.display());
-    println!("Manifest File : {}", manifest.file_path().display());
-    println!("Workers       : {}", cli.resolved_workers());
-    if cli.resume && total_scanned_count != tasks.len() {
-        let skipped_count = total_scanned_count - tasks.len();
-        let skipped_mb = ((total_scanned_bytes - remaining_bytes) as f64) / (1024.0 * 1024.0);
-        let rem_mb = (remaining_bytes as f64) / (1024.0 * 1024.0);
-        println!(
-            "Total In Dump : {} files ({:.2} MB)",
-            total_scanned_count,
-            (total_scanned_bytes as f64) / (1024.0 * 1024.0)
-        );
-        println!(
-            "Already Done  : {} files ({:.2} MB) [Skipped via manifest]",
-            skipped_count.to_string().yellow(),
-            skipped_mb
-        );
-        println!(
-            "To Import     : {} files ({:.2} MB)",
-            tasks.len().to_string().green().bold(),
-            rem_mb
-        );
-    } else {
-        println!("SQL Files     : {}", tasks.len());
-        println!(
-            "Total Size    : {:.2} MB",
-            (remaining_bytes as f64) / (1024.0 * 1024.0)
-        );
-    }
 
     // Detected databases breakdown
     println!();
@@ -263,21 +277,14 @@ fn run_import(mut cli: ImportArgs) -> Result<()> {
     db_names.sort();
     for db in &db_names {
         if let Some((count, bytes)) = remaining_db_summaries.get(db) {
-            let mb = (*bytes as f64) / (1024.0 * 1024.0);
-            if let Some((orig_count, _)) = scan.database_summaries.get(db) {
+            let skipped = scan.database_summaries.get(db).and_then(|(orig_count, _)| {
                 if *orig_count > *count {
-                    let skipped = orig_count - count;
-                    println!(
-                        "  {:<25} {:>4} files to import ({} skipped)  {:>10.2} MB",
-                        db.cyan(),
-                        count,
-                        skipped.to_string().yellow(),
-                        mb
-                    );
-                    continue;
+                    Some(orig_count - count)
+                } else {
+                    None
                 }
-            }
-            println!("  {:<25} {:>4} files  {:>10.2} MB", db.cyan(), count, mb);
+            });
+            println!("{}", ui::render_database_row(db, *count, *bytes, skipped));
         }
     }
 
@@ -310,21 +317,23 @@ fn run_import(mut cli: ImportArgs) -> Result<()> {
     // Ensure all target databases exist before starting parallel workers
     let required_databases: HashSet<String> = tasks.iter().map(|t| t.database.clone()).collect();
     println!(
-        "{}",
-        "Verifying database connection & schemas...".blue().bold()
+        "  {} {}",
+        "▸".cyan(),
+        "Verifying database connection & schemas...".bold()
     );
     db_checker::ensure_databases(&cli, &mysql_bin, option_file.path(), &required_databases)?;
     println!();
 
     println!(
         "{}",
-        "==================================================".green()
+        ui::render_section_divider(&format!(
+            "Starting Parallel Import ({} Workers)",
+            cli.resolved_workers()
+        ))
+        .green()
+        .bold()
     );
-    println!("{}", " STARTING PARALLEL IMPORT".green().bold());
-    println!(
-        "{}",
-        "==================================================".green()
-    );
+    println!();
 
     // Optional server-side tuning (innodb_flush_log_at_trx_commit, sync_binlog)
     let mut tuner = ServerTuner::new(&cli, &mysql_bin, option_file.path());
