@@ -530,4 +530,25 @@ mod tests {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("not found"));
     }
+
+    #[test]
+    fn test_zephyr_example_toml_parses_successfully() {
+        let example_path = Path::new("zephyr.example.toml");
+        assert!(example_path.exists(), "zephyr.example.toml should exist in repository root");
+        let content = std::fs::read_to_string(example_path).expect("failed to read zephyr.example.toml");
+        let cfg = ZephyrConfig::from_toml_str(&content).expect("zephyr.example.toml should parse cleanly");
+
+        // Verify active default settings
+        assert_eq!(cfg.connection.host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(cfg.connection.port, Some(3306));
+        assert_eq!(cfg.connection.user.as_deref(), Some("root"));
+        assert_eq!(cfg.connection.charset.as_deref(), Some("utf8mb4"));
+        assert_eq!(cfg.connection.max_allowed_packet.as_deref(), Some("1G"));
+
+        assert_eq!(cfg.import.dir, Some(PathBuf::from("./dumps")));
+
+        assert_eq!(cfg.export.dir, Some(PathBuf::from("./export-dumps")));
+        assert_eq!(cfg.export.compress, Some(true));
+    }
 }
+
